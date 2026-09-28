@@ -114,7 +114,7 @@ async def main():
         f"[bold cyan]Workspace:[/bold cyan] {WORKSPACE}\n"
         f"[bold cyan]Engine:[/bold cyan] LiteRT on Apple Silicon Metal GPU ([bold green]100% Offline[/bold green])\n"
         f"[bold cyan]Navigation:[/bold cyan] Arrow keys (←/→ navigate cursor, ↑/↓ prompt history)\n"
-        f"[bold cyan]Commands:[/bold cyan] Type [bold yellow]/exit[/bold yellow] to quit | [bold yellow]/clear[/bold yellow] to reset context"
+        f"[bold cyan]Commands:[/bold cyan] Type [bold yellow]/exit[/bold yellow] to quit | [bold yellow]/clear[/bold yellow] to reset | [bold yellow]/history[/bold yellow] to view history"
     )
     console.print(Panel(banner_text, title="[bold yellow]Gemma 4 26B Local Agent (Antigravity + LiteRT)[/bold yellow]", border_style="yellow"))
 
@@ -153,6 +153,18 @@ async def main():
                     break
                 if user_prompt.lower() == "/clear":
                     console.print("\n[bold yellow][Conversation reset][/bold yellow]\n")
+                    continue
+                if user_prompt.lower() == "/history":
+                    hist_path = os.path.expanduser("~/.gemma_prompt_history.txt")
+                    if os.path.exists(hist_path):
+                        with open(hist_path, "r", encoding="utf-8") as hf:
+                            lines = [l.strip() for l in hf if l.strip() and not l.startswith("#")]
+                        console.print("\n[bold yellow]── Recent Prompts History ──[/bold yellow]")
+                        for idx, p in enumerate(lines[-15:], 1):
+                            console.print(f"  [dim cyan]{idx:2d}.[/dim cyan] [white]{p}[/white]")
+                        console.print(f"[dim]History file: {hist_path}[/dim]\n")
+                    else:
+                        console.print("\n[dim]No prompt history recorded yet.[/dim]\n")
                     continue
 
                 console.print("\n[bold green]Gemma 4 >[/bold green]")
