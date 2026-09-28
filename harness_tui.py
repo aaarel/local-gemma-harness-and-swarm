@@ -158,7 +158,7 @@ async def main():
                     hist_path = os.path.expanduser("~/.gemma_prompt_history.txt")
                     if os.path.exists(hist_path):
                         with open(hist_path, "r", encoding="utf-8") as hf:
-                            lines = [l.strip() for l in hf if l.strip() and not l.startswith("#")]
+                            lines = [l.lstrip("+").strip() for l in hf if l.strip() and not l.startswith("#")]
                         console.print("\n[bold yellow]── Recent Prompts History ──[/bold yellow]")
                         for idx, p in enumerate(lines[-15:], 1):
                             console.print(f"  [dim cyan]{idx:2d}.[/dim cyan] [white]{p}[/white]")

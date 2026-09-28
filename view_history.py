@@ -22,8 +22,11 @@ def main():
     table.add_column("Source", style="cyan", width=10)
     table.add_column("Summary / Prompt", style="white")
 
-    for fpath in transcript_files[:5]:
+    for fpath in transcript_files:
         session_id = fpath.split("/")[-4]
+        # Skip the active Antigravity IDE Gemini conversation
+        if session_id == "6dbbfef0-18b1-4ed6-a7e7-08b7c6e70b7a":
+            continue
         try:
             with open(fpath, "r", encoding="utf-8") as f:
                 lines = f.readlines()
