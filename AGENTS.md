@@ -35,6 +35,11 @@
   - Run `ioreg -r -c IOAccelerator` to extract `"Device Utilization %"` and `"Alloc system memory"`.
   - Fast (~5ms), non-blocking, and requires zero administrative privileges.
 
+### 5. Version Control & Git Discipline
+- **Always update git by committing updates and changes**:
+  - Whenever code, scripts, skills, or rules are modified or added, stage and commit the changes immediately with clear, descriptive commit messages.
+  - Ensure the repository stays in a clean, reproducible state.
+
 ## Running the Components
 - **TUI Chat Harness**: `./run_tui.sh` (or `.venv/bin/python harness_tui.py`)
 - **System Monitor**: `.venv/bin/python monitor_m2.py`
