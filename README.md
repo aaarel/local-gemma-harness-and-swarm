@@ -10,6 +10,7 @@ A high-performance, 100% offline agentic coding harness and terminal environment
 * Runs Gemma 4 26B (`gemma-4-26B-A4B-it-gpu.litertlm`, ~14.7 GiB) entirely locally in Unified Memory.
 * Hardware-accelerated inference via Apple Silicon **Metal GPU**.
 * Zero external API calls, zero telemetry, and zero recurring cloud costs.
+* **Model Flexibility**: The harness can be easily pointed to other models across the Gemma family (e.g., Gemma 2B, 7B, 9B). *Note: This repository was actively tested, tuned, and verified for Gemma 4 26B A4B; running other variants or custom quantizations is fully supported via LiteRT, but may require minor tweaking (e.g. KV-cache capacity or compaction threshold adjustments).*
 
 ### 2. Forward-Only Terminal Streaming (`TerminalMarkdownStreamer`)
 * Traditional TUI live-screen renderers (e.g. `rich.live.Live`) redraw the visible screen buffer, causing line truncation, flickering, and breaking terminal scrollback.
@@ -60,7 +61,10 @@ A high-performance, 100% offline agentic coding harness and terminal environment
 ### Prerequisites
 * **Hardware**: Apple Silicon Mac (M1/M2/M3/M4 with 24 GB+ Unified Memory recommended for the 26B model).
 * **Python**: Python 3.11 provisioned via `uv` or `venv`.
-* **Model**: Gemma 4 26B A4B registered at `~/.litert-lm/models/gemma4-26b/model.litertlm`.
+* **Model**: Gemma 4 26B A4B registered at `~/.litert-lm/models/gemma4-26b/model.litertlm` (or another Gemma `.litertlm` checkpoint).
+
+> [!TIP]
+> **Swapping Models**: You can easily swap the active model by changing `MODEL_PATH` at the top of `harness_tui.py`. While this harness is tested, tuned, and verified for **Gemma 4 26B A4B**, other models in the Gemma family (2B, 7B, 9B, etc.) can be loaded via LiteRT. Keep in mind that different sizes or quantizations may require minor tuning (such as adjusting KV-cache buffer allocations or context compaction thresholds in `LiteRTAgentConfig`).
 
 ### Setup
 ```bash
