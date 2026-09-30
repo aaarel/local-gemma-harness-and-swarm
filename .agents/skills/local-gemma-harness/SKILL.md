@@ -12,7 +12,7 @@ This skill encapsulates the exact architecture, scripts, and best practices for 
 - **Engine**: Google AI Edge LiteRT (`litert-lm`) with Apple Silicon Metal GPU acceleration.
 - **Model**: `gemma-4-26B-A4B-it-gpu.litertlm` (~14.7 GiB, registered at `~/.litert-lm/models/gemma4-26b/model.litertlm`).
 - **SDK**: `google-antigravity` Python SDK (`LiteRTAgentConfig`).
-- **Harness**: Terminal User Interface (`harness_tui.py`) with `prompt_toolkit` and `rich.live.Live(Markdown(...))`.
+- **Harness**: Terminal User Interface (`harness_tui.py`) with `prompt_toolkit` and forward-only line-buffered streaming (`TerminalMarkdownStreamer`).
 
 ## Core Components
 

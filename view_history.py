@@ -1,27 +1,29 @@
 import os
-import glob
-import json
 import sys
-from datetime import datetime
+import argparse
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 
 from session_manager import SessionManager
 
 console = Console()
-BRAIN_DIR = os.path.expanduser("~/.gemini/antigravity/brain")
-WORKSPACE = os.path.abspath(os.path.dirname(__file__))
 
-def show_local_sessions():
-    mgr = SessionManager(WORKSPACE)
+def parse_args():
+    parser = argparse.ArgumentParser(description="View and manage local agent sessions")
+    parser.add_argument("--workspace", "-w", default=os.getcwd(), help="Workspace directory containing sessions")
+    parser.add_argument("--delete", "-d", help="Delete session by number (#) or ID")
+    parser.add_argument("--transcript", "-t", help="Print transcript for session by number (#) or ID")
+    return parser.parse_args()
+
+def show_sessions(workspace: str):
+    mgr = SessionManager(workspace)
     sessions = mgr.list_sessions()
     
     if not sessions:
         console.print("[dim yellow]No local sessions found in ./sessions/[/dim yellow]")
         return False
 
-    table = Table(title="[bold yellow]Local Gemma 4 Agent Sessions (./sessions/)[/bold yellow]", border_style="yellow")
+    table = Table(title=f"[bold yellow]Local Gemma Agent Sessions ({mgr.sessions_dir})[/bold yellow]", border_style="yellow")
     table.add_column("#", justify="right", style="bold yellow", width=3)
     table.add_column("Title / First Prompt", style="white", ratio=3)
     table.add_column("Turns", justify="right", style="green", width=6)
@@ -35,54 +37,32 @@ def show_local_sessions():
 
     console.print(table)
     console.print(f"\n[dim]To resume a session:             ./run_tui.sh --resume <#>[/dim]  [dim cyan](e.g. ./run_tui.sh -r 1)[/dim cyan]")
-    console.print(f"[dim]To inspect a session transcript: cat sessions/<session_id>/transcript.md[/dim]\n")
+    console.print(f"[dim]To inspect a session transcript: python view_history.py -t <#>[/dim]\n")
     return True
 
-def show_legacy_transcripts():
-    transcript_files = glob.glob(f"{BRAIN_DIR}/*/.system_generated/logs/transcript.jsonl")
-    if not transcript_files:
+def main():
+    args = parse_args()
+    mgr = SessionManager(args.workspace)
+
+    if args.delete:
+        target = mgr.resolve_session(args.delete)
+        if target:
+            mgr.delete_session(target.session_id)
+            console.print(f"[bold green]✓ Deleted session:[/bold green] {target.title} ({target.session_id})")
+        else:
+            console.print(f"[bold red][!] Session '{args.delete}' not found.[/bold red]")
         return
 
-    transcript_files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
+    if args.transcript:
+        target = mgr.resolve_session(args.transcript)
+        if target and target.transcript_file.exists():
+            console.print(f"[bold yellow]=== Transcript: {target.title} ({target.session_id}) ===[/bold yellow]\n")
+            console.print(target.transcript_file.read_text(encoding="utf-8"))
+        else:
+            console.print(f"[bold red][!] Transcript not found for session '{args.transcript}'.[/bold red]")
+        return
 
-    table = Table(title="[bold dim]Legacy SDK Transcripts (~/.gemini/antigravity/brain)[/bold dim]", border_style="dim")
-    table.add_column("Time", style="dim", width=19)
-    table.add_column("Source", style="cyan", width=10)
-    table.add_column("Summary / Prompt", style="white")
-
-    count = 0
-    for fpath in transcript_files:
-        session_id = fpath.split("/")[-4]
-        if not session_id:
-            continue
-        try:
-            with open(fpath, "r", encoding="utf-8") as f:
-                for line in f:
-                    data = json.loads(line)
-                    src = data.get("source", "")
-                    content = data.get("content", "")
-                    created_at = data.get("created_at", "")[:19].replace("T", " ")
-
-                    if src == "USER_EXPLICIT" and content:
-                        clean_prompt = content.replace("<USER_REQUEST>\n", "").replace("\n</USER_REQUEST>", "").strip()
-                        if "<ADDITIONAL_METADATA>" in clean_prompt:
-                            clean_prompt = clean_prompt.split("<ADDITIONAL_METADATA>")[0].strip()
-                        table.add_row(created_at, "[bold cyan]User[/bold cyan]", clean_prompt[:80] + ("..." if len(clean_prompt) > 80 else ""))
-                        count += 1
-                        if count >= 10:
-                            break
-        except Exception:
-            continue
-        if count >= 10:
-            break
-
-    if count > 0:
-        console.print(table)
-
-def main():
-    has_local = show_local_sessions()
-    if not has_local or "--all" in sys.argv:
-        show_legacy_transcripts()
+    show_sessions(args.workspace)
 
 if __name__ == "__main__":
     main()

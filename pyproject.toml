@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-gemma-harness-and-swarm"
+version = "0.2.0"
+description = "100% offline agentic coding harness and multi-agent swarm for Gemma 4 on Apple Silicon via LiteRT and Antigravity"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Ariel Peretz", email = "ariel@github.com" }
+]
+dependencies = [
+    "google-antigravity>=0.1.20",
+    "litert-lm>=0.17.1",
+    "prompt_toolkit>=3.0.50",
+    "rich>=13.0.0",
+    "psutil>=5.9.0",
+]
+
+[project.scripts]
+gemma-harness = "harness_tui:main"
+
+[tool.setuptools]
+py-modules = ["harness_tui", "session_manager", "monitor_m2", "view_history", "swarm"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

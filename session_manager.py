@@ -6,6 +6,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
+def safe_code_block(text: str) -> str:
+    """Wraps text in a markdown code block with enough backticks to avoid collision."""
+    count = 3
+    while ("`" * count) in text:
+        count += 1
+    fence = "`" * count
+    return f"{fence}text\n{text}\n{fence}"
+
 class Session:
     def __init__(
         self,
@@ -49,6 +57,10 @@ class Session:
     def transcript_file(self) -> Path:
         return self.base_dir / "transcript.md"
 
+    @property
+    def events_file(self) -> Path:
+        return self.base_dir / "events.jsonl"
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "session_id": self.session_id,
@@ -60,25 +72,33 @@ class Session:
         }
 
     def save(self):
+        """Atomic write for metadata.json using a temp file + os.replace to prevent corruption."""
         self.base_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.metadata_file, "w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, indent=2)
+        tmp_file = self.metadata_file.with_suffix(".tmp")
+        try:
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(self.to_dict(), f, indent=2)
+            os.replace(tmp_file, self.metadata_file)
+        except Exception:
+            if tmp_file.exists():
+                tmp_file.unlink(missing_ok=True)
+            raise
 
-    def append_turn(self, user_prompt: str, agent_response: str, duration_sec: Optional[float] = None):
-        self.turn_count += 1
-        self.updated_at = datetime.now().isoformat()
-        
-        # Auto-title on first turn if generic title
-        if self.turn_count == 1 and (self.title.startswith("Session ") or self.title == "New Session"):
-            clean_first = user_prompt.strip().replace("\n", " ")
-            self.title = clean_first[:45] + ("..." if len(clean_first) > 45 else "")
+    def log_event(self, event_type: str, data: Dict[str, Any]):
+        """Appends a structured event to events.jsonl."""
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        event = {
+            "timestamp": datetime.now().isoformat(),
+            "session_id": self.session_id,
+            "event": event_type,
+            **data,
+        }
+        with open(self.events_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
-        self.save()
-
-        # Append to human-readable transcript
-        is_new_transcript = not self.transcript_file.exists()
-        with open(self.transcript_file, "a", encoding="utf-8") as f:
-            if is_new_transcript:
+    def _ensure_transcript_header(self):
+        if not self.transcript_file.exists():
+            with open(self.transcript_file, "w", encoding="utf-8") as f:
                 f.write(f"# Session: {self.title}\n\n")
                 f.write(f"- **ID:** `{self.session_id}`\n")
                 f.write(f"- **Created:** {self.created_at}\n")
@@ -86,17 +106,82 @@ class Session:
                     f.write(f"- **Model:** `{self.model}`\n")
                 f.write("\n---\n\n")
 
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            timing = f" *(⏱ {duration_sec:.1f}s)*" if duration_sec is not None else ""
+    def append_turn(self, user_prompt: str, agent_response: str, duration_sec: Optional[float] = None):
+        """Appends a completed conversation turn to transcript.md and events.jsonl."""
+        self.turn_count += 1
+        self.updated_at = datetime.now().isoformat()
+        
+        # Auto-title on first turn if default title
+        if self.turn_count == 1 and (self.title.startswith("Session ") or self.title == "New Session"):
+            clean_first = user_prompt.strip().replace("\n", " ")
+            self.title = clean_first[:45] + ("..." if len(clean_first) > 45 else "")
+
+        self.save()
+        self._ensure_transcript_header()
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timing = f" *(⏱ {duration_sec:.1f}s)*" if duration_sec is not None else ""
+        prompt_block = safe_code_block(user_prompt)
+
+        with open(self.transcript_file, "a", encoding="utf-8") as f:
             f.write(f"### Turn {self.turn_count} — {now_str}{timing}\n\n")
-            f.write(f"**You:**\n```text\n{user_prompt}\n```\n\n")
+            f.write(f"**You:**\n{prompt_block}\n\n")
             f.write(f"**Gemma 4:**\n\n{agent_response}\n\n")
             f.write("---\n\n")
+
+        self.log_event("turn_complete", {
+            "turn": self.turn_count,
+            "prompt": user_prompt,
+            "response": agent_response,
+            "duration_sec": duration_sec,
+        })
+
+    def append_interrupted_turn(self, user_prompt: str, partial_response: str, duration_sec: Optional[float] = None):
+        """Preserves partial output when user presses Ctrl+C mid-generation."""
+        self.turn_count += 1
+        self.updated_at = datetime.now().isoformat()
+        self.save()
+        self._ensure_transcript_header()
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timing = f" *(⏱ {duration_sec:.1f}s - Interrupted)*" if duration_sec is not None else " *(Interrupted)*"
+        prompt_block = safe_code_block(user_prompt)
+        content = partial_response.strip() or "*(No output produced before interruption)*"
+
+        with open(self.transcript_file, "a", encoding="utf-8") as f:
+            f.write(f"### Turn {self.turn_count} — {now_str}{timing}\n\n")
+            f.write(f"**You:**\n{prompt_block}\n\n")
+            f.write(f"**Gemma 4 (Partial):**\n\n{content}\n\n> ⚠️ *Turn interrupted by user (Ctrl+C)*\n\n")
+            f.write("---\n\n")
+
+        self.log_event("turn_interrupted", {
+            "turn": self.turn_count,
+            "prompt": user_prompt,
+            "partial_response": partial_response,
+            "duration_sec": duration_sec,
+        })
+
+    def log_tool_call(self, name: str, args: Dict[str, Any], duration_sec: float, allowed: bool, error: Optional[str] = None):
+        """Logs structured tool execution to events.jsonl and a concise block in transcript.md."""
+        self.log_event("tool_call", {
+            "turn": self.turn_count + 1,
+            "tool_name": name,
+            "args": args,
+            "allowed": allowed,
+            "duration_sec": duration_sec,
+            "error": error,
+        })
+        self._ensure_transcript_header()
+        status_icon = "✓" if allowed and not error else "✗"
+        err_msg = f" (Error: {error})" if error else ""
+        with open(self.transcript_file, "a", encoding="utf-8") as f:
+            f.write(f"> `{status_icon} Tool:` **{name}** `({duration_sec:.2f}s)`{err_msg}\n")
 
     def update_title(self, new_title: str):
         self.title = new_title
         self.updated_at = datetime.now().isoformat()
         self.save()
+        self.log_event("session_renamed", {"new_title": new_title})
 
 
 class SessionManager:
@@ -123,6 +208,7 @@ class SessionManager:
             base_dir=self.sessions_dir / session_id,
         )
         session.save()
+        session.log_event("session_created", {"title": session.title, "model": model})
         return session
 
     def get_session(self, session_id: str) -> Optional[Session]:
@@ -198,8 +284,9 @@ class SessionManager:
         sessions = self.list_sessions()
         return sessions[0] if sessions else None
 
-    def delete_session(self, session_id: str) -> bool:
-        session = self.get_session(session_id)
+    def delete_session(self, identifier: str) -> bool:
+        """Deletes a session resolved by number, ID, or title."""
+        session = self.resolve_session(identifier) if identifier.isdigit() else self.get_session(identifier)
         if session and session.base_dir.exists():
             shutil.rmtree(session.base_dir, ignore_errors=True)
             return True
