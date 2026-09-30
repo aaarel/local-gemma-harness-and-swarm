@@ -21,10 +21,15 @@ This skill encapsulates the exact architecture, scripts, and best practices for 
 2. **Interactive TUI**: [`harness_tui.py`](../../harness_tui.py)
    - Multi-turn interactive conversation loop.
    - Tool execution hooks (`@hooks.pre_tool_call_decide`, `@hooks.post_tool_call`).
-   - Live in-place markdown rendering via `rich.live.Live(Markdown(...))`.
+   - Forward-only markdown streaming (`TerminalMarkdownStreamer`).
    - Arrow-key navigation & history via `prompt_toolkit.PromptSession()`.
-   - Elapsed turn timing (`⏱ Worked for Xs`).
-3. **M2 Pro Hardware Monitor**: [`monitor_m2.py`](../../monitor_m2.py)
+   - In-chat slash commands (`/sessions`, `/rename <title>`, `/info`, `/export`).
+3. **Session Management**: [`session_manager.py`](../../session_manager.py)
+   - Automatic conversation and trajectory isolation in `./sessions/<session_id>/`.
+   - Wires `conversation_id`, `save_dir`, and `app_data_dir` to `LiteRTAgentConfig`.
+   - Writes human-readable transcripts to `transcript.md` with turn timing.
+   - Resumes seamlessly with `./run_tui.sh --resume <id>`.
+4. **M2 Pro Hardware Monitor**: [`monitor_m2.py`](../../monitor_m2.py)
    - Real-time CPU, RAM, GPU utilization %, and GPU allocated memory.
    - Uses zero-sudo `ioreg -r -c IOAccelerator`.
 

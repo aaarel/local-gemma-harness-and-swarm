@@ -35,11 +35,24 @@
   - Run `ioreg -r -c IOAccelerator` to extract `"Device Utilization %"` and `"Alloc system memory"`.
   - Fast (~5ms), non-blocking, and requires zero administrative privileges.
 
-### 5. Version Control & Git Discipline
+### 5. Session Management & Persistence
+- **Zero-Data Loss Architecture (`session_manager.py`)**:
+  - Automatically isolates each conversation into `./sessions/<session_id>/`.
+  - Wires `conversation_id`, `save_dir`, and `app_data_dir` into `LiteRTAgentConfig`.
+  - Turns are logged in real-time to human-readable Markdown (`transcript.md`) alongside binary trajectory snapshots.
+  - Graceful `Ctrl+C` interrupt handling ensures sessions are saved and can be resumed with `./run_tui.sh --resume <id>`.
+  - In-chat commands: `/sessions` (list), `/rename <title>` (name topic), `/info` (details), `/export` (transcript path).
+
+### 6. Version Control & Git Discipline
 - **Always update git by committing updates and changes**:
   - Whenever code, scripts, skills, or rules are modified or added, stage and commit the changes immediately with clear, descriptive commit messages.
   - Ensure the repository stays in a clean, reproducible state.
 
 ## Running the Components
-- **TUI Chat Harness**: `./run_tui.sh` (or `.venv/bin/python harness_tui.py`)
+- **TUI Chat Harness**:
+  - Interactive: `./run_tui.sh`
+  - Start new session: `./run_tui.sh --new`
+  - Resume specific session: `./run_tui.sh --resume <session_id>`
+  - List saved sessions: `./run_tui.sh --list`
+- **Session & Transcript Viewer**: `.venv/bin/python view_history.py`
 - **System Monitor**: `.venv/bin/python monitor_m2.py`

@@ -13,3 +13,7 @@ __pycache__/
 
 # History files
 *.history
+
+# Local Agent Sessions
+sessions/*/conversation/
+sessions/*/app_data/
