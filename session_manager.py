@@ -154,6 +154,31 @@ class SessionManager:
         except Exception:
             return None
 
+    def resolve_session(self, query: str) -> Optional[Session]:
+        """Resolves a session by 1-based index number, session ID (exact or prefix), or title."""
+        query = str(query).strip()
+        if not query:
+            return None
+        sessions = self.list_sessions()
+        # 1. 1-based numeric index (e.g. '1', '2')
+        if query.isdigit():
+            idx = int(query) - 1
+            if 0 <= idx < len(sessions):
+                return sessions[idx]
+            return None
+        # 2. 'latest' keyword
+        if query.lower() == "latest":
+            return sessions[0] if sessions else None
+        # 3. ID match (exact or prefix)
+        target = self.get_session(query)
+        if target:
+            return target
+        # 4. Case-insensitive title match
+        title_matches = [s for s in sessions if query.lower() in s.title.lower()]
+        if len(title_matches) == 1:
+            return title_matches[0]
+        return None
+
     def list_sessions(self) -> List[Session]:
         sessions = []
         if not self.sessions_dir.exists():

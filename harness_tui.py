@@ -117,15 +117,17 @@ def render_sessions_table(sessions: list[Session], current_id: str = ""):
         return
 
     table = Table(title="[bold yellow]Local Agent Saved Sessions[/bold yellow]", border_style="yellow")
-    table.add_column("Session ID", style="cyan", width=22)
-    table.add_column("Title", style="white")
+    table.add_column("#", justify="right", style="bold yellow", width=3)
+    table.add_column("Title", style="white", ratio=3)
     table.add_column("Turns", justify="right", style="green", width=6)
     table.add_column("Last Active", style="dim", width=19)
+    table.add_column("Session ID", style="dim cyan", width=20)
 
-    for s in sessions:
+    for idx, s in enumerate(sessions, 1):
         marker = " [bold green]◄ Active[/bold green]" if s.session_id == current_id else ""
         last_time = s.updated_at[:19].replace("T", " ") if s.updated_at else s.created_at[:19].replace("T", " ")
-        table.add_row(s.session_id, f"{s.title}{marker}", str(s.turn_count), last_time)
+        short_id = s.session_id[:16] + "…"
+        table.add_row(str(idx), f"{s.title}{marker}", str(s.turn_count), last_time, short_id)
 
     console.print(table)
 
@@ -145,7 +147,7 @@ def render_info_panel(session: Session):
 def parse_args():
     parser = argparse.ArgumentParser(description="Gemma 4 26B Local TUI Harness with Session Management")
     parser.add_argument("--new", "-n", action="store_true", help="Start a new session immediately")
-    parser.add_argument("--resume", "-r", nargs="?", const="latest", help="Resume latest or specified session ID")
+    parser.add_argument("--resume", "-r", nargs="?", const="latest", help="Resume latest or specified session by number (#) or ID")
     parser.add_argument("--list", "-l", action="store_true", help="List all saved sessions and exit")
     parser.add_argument("--title", "-t", type=str, help="Initial title for the session")
     return parser.parse_known_args()[0]
@@ -164,15 +166,7 @@ async def select_or_create_session(session_mgr: SessionManager, args: argparse.N
         return session
 
     if args.resume:
-        if args.resume == "latest":
-            latest = session_mgr.get_latest_session()
-            if latest:
-                console.print(f"[bold green]✓ Resuming latest session:[/bold green] [cyan]{latest.title}[/cyan] ({latest.session_id})\n")
-                return latest
-            console.print("[dim yellow]No prior session found. Creating a new one.[/dim yellow]")
-            return session_mgr.create_session(title=args.title, model="gemma4-26b")
-        
-        target = session_mgr.get_session(args.resume)
+        target = session_mgr.resolve_session(args.resume)
         if target:
             console.print(f"[bold green]✓ Resuming session:[/bold green] [cyan]{target.title}[/cyan] ({target.session_id})\n")
             return target
@@ -182,21 +176,28 @@ async def select_or_create_session(session_mgr: SessionManager, args: argparse.N
     # 2. Interactive prompt if sessions exist
     if sessions:
         latest = sessions[0]
-        console.print(f"[bold cyan]Found recent session:[/bold cyan] \"[white]{latest.title}[/white]\" ([dim]{latest.session_id}[/dim], {latest.turn_count} turns)")
+        console.print(f"[bold cyan]Found recent session:[/bold cyan] \"[white]{latest.title}[/white]\" (Turns: {latest.turn_count})")
         try:
-            choice = input("Press [Enter] to resume, 'n' for new, or 'l' to list all: ").strip().lower()
-            if choice == "l":
+            prompt_hint = f"Press [Enter] to resume #1, number (1-{len(sessions)}), 'l' to list, 'n' for new: "
+            choice = input(prompt_hint).strip()
+            if not choice:
+                return latest
+            if choice.lower() == "n":
+                return session_mgr.create_session(title=args.title, model="gemma4-26b")
+            if choice.lower() == "l":
                 render_sessions_table(sessions)
-                sub_choice = input("Enter session ID to resume (or [Enter] for new): ").strip()
+                sub_choice = input(f"Enter session # (1-{len(sessions)}) or ID to resume (or [Enter] for new): ").strip()
                 if sub_choice:
-                    target = session_mgr.get_session(sub_choice)
+                    target = session_mgr.resolve_session(sub_choice)
                     if target:
                         return target
                 return session_mgr.create_session(title=args.title, model="gemma4-26b")
-            elif choice == "n":
-                return session_mgr.create_session(title=args.title, model="gemma4-26b")
-            else:
-                return latest
+            
+            # Direct numeric (#) or ID resolution
+            target = session_mgr.resolve_session(choice)
+            if target:
+                return target
+            return session_mgr.create_session(title=args.title, model="gemma4-26b")
         except (KeyboardInterrupt, EOFError):
             console.print("\n[dim]Aborted.[/dim]")
             sys.exit(0)
