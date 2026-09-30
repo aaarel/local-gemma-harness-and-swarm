@@ -75,7 +75,8 @@ cd local-gemma-harness-and-swarm
 # 2. Create virtual environment & install dependencies
 uv venv --python 3.11 .venv
 source .venv/bin/activate
-uv pip install google-antigravity litert-lm prompt_toolkit rich psutil
+uv pip install -r requirements.txt
+# (or: pip install -r requirements.txt)
 ```
 
 ---
