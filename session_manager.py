@@ -1,6 +1,7 @@
 import os
 import json
 import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -108,14 +109,8 @@ class SessionManager:
 
     def create_session(self, title: Optional[str] = None, model: str = "") -> Session:
         now = datetime.now()
-        session_id = now.strftime("%Y-%m-%d_%H-%M-%S")
-        # Ensure unique ID if called in rapid succession
-        counter = 1
-        base_id = session_id
-        while (self.sessions_dir / session_id).exists():
-            session_id = f"{base_id}_{counter}"
-            counter += 1
-
+        # SDK requires conversation_id >= 32 chars matching [a-zA-Z0-9-]
+        session_id = f"{now.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4()}"
         session_title = title or f"Session {now.strftime('%b %d, %H:%M')}"
         now_iso = now.isoformat()
         session = Session(

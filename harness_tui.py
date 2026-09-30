@@ -232,6 +232,7 @@ async def main():
         policies=[policy.allow_all()],  # Allows autonomous tool execution
         hooks=[on_pre_tool, on_post_tool],  # Real-time tool lifecycle display
         conversation_id=session.session_id,  # Native Antigravity conversation ID
+        session_continuation_mode=types.SessionContinuationMode.CREATE_OR_RESUME,
         save_dir=str(session.conversation_dir),  # Persistent trajectory state
         app_data_dir=str(session.app_data_dir),  # Per-session artifacts & scratch files
     )
