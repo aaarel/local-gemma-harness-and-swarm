@@ -53,8 +53,7 @@ def show_legacy_transcripts():
     count = 0
     for fpath in transcript_files:
         session_id = fpath.split("/")[-4]
-        # Skip current IDE session
-        if "6dbbfef0" in session_id or "fb6b7e94" in session_id:
+        if not session_id:
             continue
         try:
             with open(fpath, "r", encoding="utf-8") as f:

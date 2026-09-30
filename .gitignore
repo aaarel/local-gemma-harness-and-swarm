@@ -11,8 +11,24 @@ __pycache__/
 # macOS System Files
 .DS_Store
 
-# History files
+# History & Prompt logs (PRIVATE: Do not commit)
 *.history
+prompt_history.txt
+*.log
 
 # Local Agent Sessions (keep conversations local & private)
 sessions/
+
+# Credentials, Keys, and Secrets
+.env
+*.env
+*.pem
+*.key
+*.token
+*.credentials
+*.cert
+
+# Antigravity & IDE generated
+.gemini/
+.system_generated/
+scratch/
