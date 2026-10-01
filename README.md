@@ -4,6 +4,12 @@ A 100% offline, tool-augmented terminal agent and multi-agent development enviro
 
 ---
 
+## 💎 About Gemma 4
+
+**Gemma** is Google DeepMind's family of lightweight open models built on the same research and technology as Gemini. **Gemma 4** delivers advanced reasoning across text, code, audio, and vision with 140+ language support and long-context windows (128K–256K) optimized for on-device execution.
+
+---
+
 ## 💡 Why This Exists
 
 Most local LLM tools (like Ollama or LM Studio) are designed primarily for conversational chat or HTTP APIs. They lack built-in **agentic coding primitives**—native tools for inspecting files, applying targeted code edits, executing shell commands, and sandboxing workspaces.
