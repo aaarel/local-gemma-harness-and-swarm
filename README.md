@@ -1,50 +1,71 @@
-# Local Gemma 4 & Antigravity TUI Harness + Swarm
+# Local Gemma 4 Agent Harness & Multi-Agent Swarm
 
-A high-performance, 100% offline agentic coding harness, multi-agent swarm, and terminal environment for **Gemma 4 26B** running on **Apple Silicon (M2/M3/M4)** using **Google AI Edge LiteRT (`litert-lm`)** with Metal GPU acceleration and the **Google Antigravity SDK**.
+An offline, tool-augmented terminal agent and multi-agent development environment for **Gemma 4 26B** on **Apple Silicon (M2/M3/M4)**. Powered by **Google AI Edge LiteRT (`litert-lm`)** with Metal GPU acceleration and the **Google Antigravity SDK**.
 
 ---
 
-## 🌟 Key Features
+## 💡 Why This Exists
 
-### 1. 100% On-Device & Zero Cloud Dependencies
-* Runs Gemma 4 26B (`gemma-4-26B-A4B-it-gpu.litertlm`, ~14.7 GiB) entirely locally in Unified Memory.
-* Hardware-accelerated inference via Apple Silicon **Metal GPU**.
-* Zero external API calls, zero telemetry, and zero recurring cloud costs.
-* **Model Flexibility**: The harness can be easily pointed to other models across the Gemma family (e.g., Gemma 2B, 7B, 9B). *Note: This repository was actively tested, tuned, and verified for Gemma 4 26B A4B; running other variants or custom quantizations is fully supported via LiteRT, but may require minor parameter adjustments (e.g. KV-cache capacity or compaction threshold adjustments).*
+Most local LLM tools (such as Ollama, LM Studio, or llama.cpp) provide raw chat interfaces or HTTP endpoints, but lack built-in **agentic coding primitives**—tools for file viewing, incremental file editing, command execution, workspace sandboxing, and audit logging.
 
-### 2. Multi-Agent Swarm Pipeline (`swarm.py`)
-* Solves the 15 GB VRAM memory constraint on Apple Silicon by coordinating multiple specialized roles (**Planner → Worker → Reviewer**) that take turns over a **single shared LiteRT engine**:
-  * **Planner**: Analyzes the objective, inspects the codebase with read-only tools, and crafts an actionable task plan.
-  * **Worker / Builder**: Executes the plan, creates/edits files, and implements the code.
-  * **Reviewer / QA**: Audits diffs, runs test commands, and issues a final PASS/FAIL verdict with constructive feedback.
-* Trigger live in chat with `/swarm <objective>`.
+This project bridges that gap by providing:
+1. **Agentic Tool Execution**: Equips local Gemma models with native system tools (file inspection, code editing, shell execution) to perform real engineering tasks on your local disk.
+2. **Interactive Safety Controls**: A granular security gate requiring confirmation (`[y/N/a]`) before write or execution actions, paired with workspace isolation.
+3. **Hardware-Conscious Swarm**: A sequential multi-agent pipeline (Planner → Worker → Reviewer) designed to fit within Apple Silicon Unified Memory without triggering OOM errors.
+4. **Complete Privacy**: Zero cloud calls, zero telemetry, and zero third-party APIs. Your code and prompts stay strictly on your local machine.
 
-### 3. Interactive Safety Controls & `--yolo` Flag
-* **Protected by Default**: Write and execution tools (`run_command`, `write_to_file`, `replace_file_content`) prompt for interactive confirmation `[y/N/a(lways)]` before running.
-* **Autonomous Mode**: Pass `--yolo` at startup or type `a` in prompt to grant autonomous tool execution for the session.
-* Read-only tools (`view_file`, etc.) remain automatic for a fluid developer experience.
+---
 
-### 4. True Zero-Data-Loss Architecture & Event Logging
-* **Turn-Level Cancellation**: Pressing `Ctrl+C` mid-generation stops the current stream, preserves the partial answer, and keeps your REPL session alive without process death.
-* **Atomic Metadata Writes**: Uses temporary files with atomic `os.replace` to prevent metadata corruption on abrupt termination.
-* **Structured Event Logging (`events.jsonl`)**: Records every user prompt, model response, tool call, argument payload, execution timing, and permission decision alongside human-readable `transcript.md`.
-* **Collison-Free Code Fencing**: Safely wraps user prompts containing arbitrary backticks without breaking markdown fences.
-* **1-Based Numeric Resumption**: Resume past sessions easily by number (e.g., `./run_tui.sh --resume 1`).
+## ⚡ Harness Capabilities & Features
 
-### 5. Forward-Only Terminal Streaming (`TerminalMarkdownStreamer`)
-* Traditional TUI live-screen renderers (e.g. `rich.live.Live`) redraw the visible screen buffer, causing line truncation, flickering, and breaking terminal scrollback.
-* Our forward-only line-buffered streamer writes directly to stdout:
-  * **100% Native Scrollback**: Scroll all the way to the top of long conversations.
-  * **Responsive Terminal Reflow**: Automatically wraps and reflows text dynamically as terminal windows are resized.
-  * **Regex-Preserved Formatting**: Fully preserves nested bullet indentation and bold (`**Bold**`) markdown markers without text stripping.
+| Capability | Description |
+| :--- | :--- |
+| **100% On-Device Metal Inference** | Runs Gemma 4 26B A4B (~14.7 GiB) directly in Unified Memory using Google AI Edge LiteRT with Metal GPU acceleration. |
+| **Agentic Coding Tools** | Native tool support for `view_file`, `write_to_file`, `replace_file_content`, and `run_command`. |
+| **Interactive Safety & YOLO Mode** | Safe by default: write and shell actions prompt `[y/N/a(lways)]`. Pass `--yolo` for autonomous, unattended workflows. |
+| **Workspace Sandboxing** | Target specific directories via `--workspace <path>`, preventing the agent from modifying the harness codebase itself. |
+| **Multi-Agent Swarm Pipeline** | Orchestrates specialized roles (Planner → Worker → Reviewer) sequentially over a single model instance *(WIP / Experimental)*. |
+| **Zero-Data-Loss Session Logging** | Every interaction is logged to both human-readable Markdown (`transcript.md`) and structured JSONL (`events.jsonl`). |
+| **Non-Destructive Turn Interruption** | Pressing `Ctrl+C` halts only the active generation, preserves partial output to disk, and keeps the REPL session alive. |
+| **Atomic Metadata Persistence** | State updates write to temporary files before atomic `os.replace` to safeguard against corruption during sudden exits. |
+| **Forward-Only Terminal Streaming** | Line-buffered streaming preserves 100% native OS terminal scrollback and supports dynamic terminal resizing without redraw artifacts. |
+| **Zero-Sudo Hardware Telemetry** | Standalone IOKit-based dashboard (`monitor_m2.py`) displays real-time GPU %, allocated VRAM (GB), CPU %, and RAM without root privileges. |
+| **Session Management & CLI Utilities** | Dedicated commands to list, resume by numeric index (`--resume 1`), inspect transcripts, and delete past sessions. |
 
-### 6. Zero-Sudo Apple Silicon Telemetry (`monitor_m2.py`)
-* Standard macOS tools like `powermetrics` strictly require `sudo` and fail in non-interactive environments.
-* Our monitor queries the macOS IOKit `IOAccelerator` service directly:
-  * Real-time **GPU Utilization %**
-  * Real-time **Allocated GPU Memory (GB)**
-  * Real-time **CPU & RAM usage**
-  * Non-blocking (~5ms) and requires **zero root/administrative privileges**.
+---
+
+## 🧠 Multi-Agent Swarm Pipeline (`swarm.py`)
+
+> [!WARNING]
+> **Work in Progress / Experimental**:
+> The sequential role handoff architecture is implemented and operational in `swarm.py` and via `/swarm <task>`, but multi-turn automated evaluation and self-correction benchmarks are under active development. Feedback and contributions are welcome.
+
+### How It Works
+Loading multiple 15 GB models simultaneously on a single 32 GB Mac will exhaust Unified Memory and cause kernel panics or swap thrashing. The Swarm solves this by running specialized roles **sequentially** over the **same loaded model instance**:
+
+```
+[User Objective]
+       │
+       ▼
+┌──────────────┐
+│   PLANNER    │ ── Inspects workspace (read-only) & drafts technical specification
+└──────────────┘
+       │
+       ▼
+┌──────────────┐
+│    WORKER    │ ── Implements code changes & edits files per specification
+└──────────────┘
+       │
+       ▼
+┌──────────────┐
+│   REVIEWER   │ ── Audits diffs, runs test commands & issues PASS/FAIL verdict
+└──────────────┘
+```
+
+Trigger a swarm task directly inside the TUI REPL:
+```text
+You [1] > /swarm Add unit tests for session_manager.py and verify coverage
+```
 
 ---
 
@@ -52,103 +73,122 @@ A high-performance, 100% offline agentic coding harness, multi-agent swarm, and 
 
 | File | Description |
 | :--- | :--- |
-| **`harness_tui.py`** | Main interactive terminal agent harness featuring `prompt_toolkit`, forward-only streaming, safety confirmations, session management, and slash commands. |
-| **`swarm.py`** | Multi-agent swarm orchestrator (Planner → Worker → Reviewer) sharing the LiteRT Metal GPU model in memory. |
-| **`session_manager.py`** | Dedicated session management layer handling atomic metadata writes, structured `events.jsonl` logging, transcripts, and numeric index resolution. |
-| **`monitor_m2.py`** | Standalone Curses-based real-time Apple Silicon GPU, CPU, and RAM utilization monitor (zero-sudo). |
-| **`view_history.py`** | CLI tool to inspect past sessions, print transcripts, and delete sessions. |
-| **`smoke.py`** | Lightweight smoke verification script for LiteRT runtime compilation and test inference. |
-| **`run_tui.sh`** | Native bash launcher forwarding command-line arguments to the Python virtual environment. |
-| **`pyproject.toml`** | Modern packaging configuration and CLI script entry points. |
-| **`tests/`** | Pytest unit test suite covering session persistence, atomic writes, streamer formatting, and backtick safety. |
-| **`AGENTS.md`** | System guidelines, learnings, architectural constraints, and operational runbook. |
+| **`harness_tui.py`** | Primary interactive REPL featuring `prompt_toolkit`, forward-only streaming, safety gates, and slash commands. |
+| **`swarm.py`** | Sequential multi-agent pipeline (Planner → Worker → Reviewer) sharing the LiteRT Metal model. *(WIP)* |
+| **`session_manager.py`** | Session persistence engine handling atomic metadata, `events.jsonl` audit trails, and transcripts. |
+| **`monitor_m2.py`** | Zero-sudo Curses monitor tracking Apple Silicon GPU utilization %, VRAM allocation, CPU, and RAM. |
+| **`view_history.py`** | CLI tool to inspect session tables, view formatted transcripts, and delete past sessions. |
+| **`smoke.py`** | Quick diagnostic script to verify LiteRT Metal GPU compilation and local inference. |
+| **`run_tui.sh`** | Shell wrapper forwarding CLI arguments to the project virtual environment. |
+| **`pyproject.toml`** | Packaging specification declaring dependencies and the `gemma-harness` command entrypoint. |
+| **`tests/`** | Unit test suite covering session persistence, atomic writes, streamer formatting, and backtick safety. |
+| **`AGENTS.md`** | Engineering rules, architectural invariants, and hardware-specific learnings. |
 
 ---
 
 ## 🚀 Quick Start
 
-### Prerequisites
-* **Hardware**: Apple Silicon Mac (M1/M2/M3/M4 with 24 GB+ Unified Memory recommended for the 26B model).
-* **Python**: Python 3.11 provisioned via `uv` or `venv`.
-* **Model**: Gemma 4 26B A4B registered at `~/.litert-lm/models/gemma4-26b/model.litertlm` (or another Gemma `.litertlm` checkpoint).
+### Hardware & Software Requirements
+- **Hardware**: Apple Silicon Mac (M1/M2/M3/M4). 24 GB–32 GB Unified Memory recommended for Gemma 4 26B; 16 GB Macs can run Gemma 2B or 9B variants.
+- **Python**: Python 3.11 provisioned via `uv` or `venv`.
+- **Model**: Gemma 4 26B A4B registered at `~/.litert-lm/models/gemma4-26b/model.litertlm` (or any compatible Gemma `.litertlm` checkpoint).
 
 > [!TIP]
-> **Swapping Models**: You can easily swap the active model with `--model /path/to/model.litertlm` or by changing `DEFAULT_MODEL_PATH` in `harness_tui.py`. While this harness is tested, tuned, and verified for **Gemma 4 26B A4B**, other models in the Gemma family (2B, 7B, 9B, etc.) can be loaded via LiteRT.
+> **Swapping Models**: You can load other Gemma variants using `--model /path/to/model.litertlm` or by setting `DEFAULT_MODEL_PATH` in `harness_tui.py`. While verified primarily on Gemma 4 26B A4B, LiteRT supports other checkpoints in the Gemma family.
 
-### Setup
+### Installation
 ```bash
 # 1. Clone repository
 git clone https://github.com/aaarel/local-gemma-harness-and-swarm.git
 cd local-gemma-harness-and-swarm
 
-# 2. Create virtual environment & install dependencies
+# 2. Set up virtual environment and install dependencies
 uv venv --python 3.11 .venv
 source .venv/bin/activate
 uv pip install -r requirements.txt pytest
 ```
 
+### Verification Smoke Test
+Before starting interactive sessions, verify that LiteRT loads the model and compiles Metal shaders:
+```bash
+.venv/bin/python smoke.py
+```
+
 ---
 
-## 💬 Usage
+## 💬 Usage Guide
 
 ### 1. Launching the Interactive TUI
 ```bash
-# Interactive mode (protected write permissions by default)
+# Safe interactive mode (prompts before write/exec tools)
 ./run_tui.sh
 
-# Autonomous execution (YOLO mode - auto-approves tool calls)
+# Autonomous mode (auto-approves tool execution)
 ./run_tui.sh --yolo
 
-# Run against a specific external project workspace
-./run_tui.sh --workspace /path/to/my-project
+# Scope the agent to an external project workspace
+./run_tui.sh --workspace /path/to/target-project
 
-# Resume a specific session by number (#) or ID
+# Resume a previous session by numeric index (#) or session ID
 ./run_tui.sh --resume 1
 
-# List all saved sessions
+# List all saved sessions on disk
 ./run_tui.sh --list
 ```
 
-### 2. Multi-Agent Swarm Mode
-Inside the TUI chat prompt:
-```text
-You [1] > /swarm Refactor our database adapter to add connection pooling
-```
-The Planner will draft the specifications, the Worker will implement the code, and the Reviewer will inspect and deliver verification feedback.
+### 2. In-Chat Slash Commands
+* **`/swarm <task>`** — Run the sequential Planner → Worker → Reviewer pipeline. *(WIP)*
+* **`/sessions`** — List all saved sessions with index numbers, turns, and dates.
+* **`/delete <#>`** — Delete a session folder from disk.
+* **`/rename <topic>`** — Rename the active session title (e.g. `/rename Database Refactor`).
+* **`/info`** — Display session ID, safety mode, model path, and storage paths.
+* **`/export`** — Show paths and sizes for `transcript.md` and `events.jsonl`.
+* **`/clear`** — Clear the terminal screen and reset conversation context.
+* **`/exit`** — Save metadata atomically and exit.
 
-### 3. Monitoring Hardware Side-by-Side
-Open a separate terminal pane alongside your chat session:
+### 3. Real-Time Hardware Monitoring
+To monitor GPU load and Unified Memory allocation while the agent runs, launch the monitor in an adjacent terminal split:
 ```bash
 .venv/bin/python monitor_m2.py
 ```
 
-### 4. In-Chat Slash Commands
-* **`/swarm <task>`** — Launch the multi-agent Planner → Worker → Reviewer pipeline.
-* **`/sessions`** — Display a table of all saved sessions with turn counts and numbers.
-* **`/delete <#>`** — Delete a past session from disk.
-* **`/rename <topic>`** — Rename the current session topic (e.g. `/rename GCP DNS Design`).
-* **`/info`** — Display active session ID, safety mode, and storage directories.
-* **`/export`** — Show the absolute path and stats for the markdown `transcript.md` and `events.jsonl`.
-* **`/clear`** — Clean the screen view and begin a fresh context sequence.
-* **`/exit`** — Cleanly save session metadata and exit.
-
----
-
-## 🧪 Running Unit Tests
+### 4. Viewing Past Session Transcripts
 ```bash
-pytest tests/
+# List sessions
+.venv/bin/python view_history.py
+
+# Print transcript of session #1
+.venv/bin/python view_history.py -t 1
+
+# Delete session #2
+.venv/bin/python view_history.py -d 2
 ```
 
 ---
 
-## 🔒 Privacy & Security
+## 🧪 Testing & Quality Assurance
 
-This repository is designed from the ground up to keep your local data private:
-* Personal conversation histories, trajectories, and events are stored in `./sessions/` and are strictly ignored by `.gitignore`.
-* Local shell and prompt histories (`prompt_history.txt`) are excluded from version control.
-* Safety policy confirms execution and file-write commands by default to prevent accidental modifications.
+Run the test suite:
+```bash
+pytest tests/
+```
+Tests validate:
+- Atomic file write mechanisms and crash resilience.
+- Structured event logging in `events.jsonl`.
+- Dynamic backtick collision safety (`safe_code_block`).
+- Line-buffered markdown streaming and nested bullet point preservation.
+
+---
+
+## 🔒 Privacy & Data Isolation
+
+- **Zero Cloud Calls**: Model weights run locally on Apple Silicon Metal; no telemetry or data packets leave your device.
+- **Isolated Session Storage**: Transcripts and trajectories are saved under `./sessions/` and are excluded from Git via `.gitignore`.
+- **Command & Prompt History**: REPL history (`prompt_history.txt`) is kept local and untracked.
+- **Permission Guardrails**: Modification tools (`run_command`, `write_to_file`, `replace_file_content`) require manual user confirmation by default.
 
 ---
 
 ## 📄 License
+
 MIT License. Built with Google Antigravity & Google AI Edge LiteRT.
