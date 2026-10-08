@@ -25,6 +25,25 @@ from swarm import LocalSwarm
 DEFAULT_MODEL_PATH = os.path.expanduser("~/.litert-lm/models/gemma4-26b/model.litertlm")
 console = Console()
 
+DEFAULT_SYSTEM_INSTRUCTIONS = """You are Gemma, an expert autonomous software engineer and coding assistant running 100% locally on Apple Silicon via Google AI Edge LiteRT.
+
+CORE OPERATIONAL GUIDELINES:
+
+1. TOOL USAGE & EXECUTION CONSTRAINTS:
+   - Only call tools (run_command, view_file, write_to_file, replace_file_content) when explicitly needed to inspect/edit files or run terminal commands.
+   - If the user asks a general knowledge or explanation question, answer directly in text without calling tools.
+   - If the user explicitly instructs "do not execute", "dry run", or "review only", NEVER invoke execution or modification tools.
+   - Before modifying or editing an existing file, always inspect it first using view_file.
+
+2. CODE QUALITY & ACCURACY:
+   - Write clean, modular, production-ready code.
+   - Do NOT use placeholder comments, omitted blocks, or "// TODO" shortcuts—provide complete, working implementations.
+   - Preserve existing project architecture, coding standards, and indentation styles.
+
+3. COMMUNICATION & TERMINAL STREAMING:
+   - Keep answers direct, concise, and technically rigorous. Avoid unnecessary conversational filler.
+   - Format outputs with clean, standard Markdown (code fences, lists, tables) tailored for terminal readability."""
+
 class TerminalMarkdownStreamer:
     """
     Forward-only streaming markdown formatter.
@@ -212,6 +231,7 @@ def parse_args():
     parser.add_argument("--workspace", "-w", type=str, default=os.getcwd(), help="Target workspace path (defaults to current directory)")
     parser.add_argument("--model", "-m", type=str, default=DEFAULT_MODEL_PATH, help="Path to .litertlm model file")
     parser.add_argument("--title", "-t", type=str, help="Initial title for the session")
+    parser.add_argument("--system-prompt", "-s", type=str, default=None, help="Custom system instructions override")
     return parser.parse_known_args()[0]
 
 async def select_or_create_session(session_mgr: SessionManager, args: argparse.Namespace, p_session: PromptSession) -> Session:
@@ -314,11 +334,20 @@ async def main():
 
     console.print("\n[dim]Loading model weights into unified memory & restoring session state...[/dim]")
 
+    system_instructions = DEFAULT_SYSTEM_INSTRUCTIONS
+    if args.system_prompt:
+        if os.path.isfile(args.system_prompt):
+            with open(args.system_prompt, "r", encoding="utf-8") as f:
+                system_instructions = f.read()
+        else:
+            system_instructions = args.system_prompt
+
     config = LiteRTAgentConfig(
         model_path=model_path,
         workspaces=[workspace_path],
         policies=[policy.allow_all()],  # SDK policies allow hook to manage confirmations
         hooks=[on_pre_tool, on_post_tool],  # Hook enforces safety confirmations
+        system_instructions=system_instructions,
         conversation_id=session.session_id,  # Native Antigravity conversation ID
         session_continuation_mode=types.SessionContinuationMode.CREATE_OR_RESUME,
         save_dir=str(session.conversation_dir),  # Persistent trajectory state
