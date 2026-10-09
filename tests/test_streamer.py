@@ -1,6 +1,6 @@
 import io
 import sys
-from harness_tui import TerminalMarkdownStreamer
+from harness_tui import TerminalMarkdownStreamer, render_diff_preview
 
 def test_bullet_formatting_preserves_bold():
     streamer = TerminalMarkdownStreamer()
@@ -42,5 +42,38 @@ def test_code_fence_formatting():
         assert "┌── python" in output
         assert "│" in output
         assert "└──" in output
+    finally:
+        sys.stdout = old_stdout
+
+def test_render_diff_preview_replacement():
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+    try:
+        tool_args = {
+            "TargetFile": "test_module.py",
+            "TargetContent": "def old():\n    return 1",
+            "ReplacementContent": "def new():\n    return 2",
+        }
+        render_diff_preview("replace_file_content", tool_args)
+        output = buffer.getvalue()
+        assert "Proposed Diff: test_module.py" in output
+        assert "-def old():" in output
+        assert "+def new():" in output
+    finally:
+        sys.stdout = old_stdout
+
+def test_render_diff_preview_new_file():
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+    try:
+        tool_args = {
+            "TargetFile": "nonexistent_new_file.py",
+            "CodeContent": "print('hello world')",
+            "Append": False,
+        }
+        render_diff_preview("write_to_file", tool_args)
+        output = buffer.getvalue()
+        assert "Creating new file: nonexistent_new_file.py" in output
+        assert "print('hello world')" in output
     finally:
         sys.stdout = old_stdout

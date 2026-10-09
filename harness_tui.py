@@ -6,6 +6,7 @@ import sys
 import time
 import json
 import shutil
+import difflib
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
@@ -18,6 +19,7 @@ from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.syntax import Syntax
 
 from session_manager import SessionManager, Session
 from swarm import LocalSwarm
@@ -114,6 +116,69 @@ prompt_style = Style.from_dict({
     "": "ansicyan",
 })
 
+def render_diff_preview(tool_name: str, tool_args: Dict[str, Any]):
+    """Renders a colorized, unified diff preview for file write and replacement tools (inspired by Pi)."""
+    target_file = tool_args.get("TargetFile") or tool_args.get("path")
+    if not target_file:
+        return
+
+    rel_path = os.path.relpath(target_file, os.getcwd()) if os.path.isabs(target_file) else target_file
+
+    if any(e in tool_name for e in ("replace_file_content", "edit_file")):
+        target_content = tool_args.get("TargetContent", "")
+        replacement = tool_args.get("ReplacementContent", "")
+        if not target_content and not replacement:
+            return
+
+        from_lines = target_content.splitlines()
+        to_lines = replacement.splitlines()
+        diff = list(difflib.unified_diff(from_lines, to_lines, fromfile=f"a/{rel_path}", tofile=f"b/{rel_path}", lineterm=""))
+        if diff:
+            diff_text = "\n".join(diff)
+            console.print(Panel(
+                Syntax(diff_text, "diff", theme="ansi_dark", line_numbers=False),
+                title=f"[bold yellow]Proposed Diff: {rel_path}[/bold yellow]",
+                border_style="yellow",
+            ))
+
+    elif any(w in tool_name for w in ("write_to_file", "create_file")):
+        new_content = tool_args.get("CodeContent", "")
+        if not new_content:
+            return
+
+        is_append = tool_args.get("Append", False)
+        if os.path.exists(target_file) and not is_append:
+            try:
+                with open(target_file, "r", encoding="utf-8", errors="ignore") as f:
+                    old_content = f.read()
+                from_lines = old_content.splitlines()
+                to_lines = new_content.splitlines()
+                diff = list(difflib.unified_diff(from_lines, to_lines, fromfile=f"a/{rel_path}", tofile=f"b/{rel_path}", lineterm=""))
+                if diff:
+                    diff_text = "\n".join(diff[:60])
+                    if len(diff) > 60:
+                        diff_text += f"\n... ({len(diff) - 60} more lines truncated)"
+                    console.print(Panel(
+                        Syntax(diff_text, "diff", theme="ansi_dark", line_numbers=False),
+                        title=f"[bold yellow]Proposed Overwrite Diff: {rel_path}[/bold yellow]",
+                        border_style="yellow",
+                    ))
+            except Exception:
+                pass
+        else:
+            action_desc = "Appending to" if is_append else "Creating new file"
+            lines = new_content.splitlines()
+            preview = "\n".join(lines[:25])
+            if len(lines) > 25:
+                preview += f"\n... ({len(lines) - 25} more lines truncated)"
+            
+            ext = os.path.splitext(target_file)[1].lstrip(".") or "txt"
+            console.print(Panel(
+                Syntax(preview, ext, theme="ansi_dark", line_numbers=True),
+                title=f"[bold yellow]{action_desc}: {rel_path} ({len(lines)} lines)[/bold yellow]",
+                border_style="yellow",
+            ))
+
 @hooks.pre_tool_call_decide
 async def on_pre_tool(data: types.ToolCall) -> types.HookResult:
     global active_tools, current_streamer, yolo_mode, current_session, prompt_session
@@ -147,6 +212,9 @@ async def on_pre_tool(data: types.ToolCall) -> types.HookResult:
     # Safety Policy: Write and execution tools require confirmation unless in YOLO mode
     is_write_or_exec = any(k in tool_name for k in ("run_command", "write_to_file", "replace_file_content", "create_file", "edit_file", "delete_file"))
     if is_write_or_exec and not yolo_mode and prompt_session:
+        # Show visual diff preview before prompting (inspired by Pi)
+        render_diff_preview(tool_name, tool_args)
+
         console.print(f"[bold red]⚠️  Safety Confirmation Required for:[/bold red] [white]{tool_name}[/white]")
         ans = await prompt_session.prompt_async(
             [("class:prompt", "Allow execution? [y/N/a(lways)]: ")],
