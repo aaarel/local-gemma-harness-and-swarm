@@ -51,6 +51,28 @@ This backlog records candidate improvements, code review recommendations (includ
 
 ---
 
+### 5. Architectural Patterns from Pi & OMA
+- [x] **Visual Colorized Diffs on Safety Prompts** *(Implemented)*:
+  - Formatted `rich` unified diff preview on file write/replace prompts (`replace_file_content` / `write_to_file`), showing exact line additions/deletions before confirmation.
+
+- [ ] **The `/undo` / `/rewind` Turn Checkpoint System (from Pi)**:
+  - **Context**: 26B local models occasionally take wrong turns or produce broken syntax.
+  - **Improvement**: Implement an `/undo` or `/rewind` slash command that rolls back the session state in `session_manager.py` (removing the last turn from context and `transcript.md`) and reverts any modified file changes to the previous turn checkpoint.
+
+- [ ] **Aggressive Tool Output Pruning & KV-Cache Protection (from Pi)**:
+  - **Context**: Large terminal outputs (e.g., hundreds of lines from `pytest`, build logs, or large file listings) quickly fill the KV-cache and dramatically inflate prefill latency (TTFT) on Apple Silicon.
+  - **Improvement**: Persist full outputs to `events.jsonl` on disk, but prune the in-memory context sent to the model: keep the first 10 lines + last 10 lines + exit status (e.g. `[Output truncated: 180 lines, exit code 0]`). This preserves fast prefill (~400ms) across long sessions.
+
+- [ ] **Lean "Core-4" Minimal Tool Optimization (from Pi)**:
+  - **Context**: Smaller local models achieve higher accuracy when tool definitions are ruthlessly minimal and unambiguous.
+  - **Improvement**: Harden the core 4 primitives (`view_file`, `write_to_file`, `replace_file_content`, `run_command`) with concise, low-token schemas and strict prompt hints to eliminate tool-selection hallucinations.
+
+- [ ] **Pre-Configured Workflow Modes (from OMA / Oh-My-AGY)**:
+  - **Context**: Different tasks require different model behaviors (e.g., deep analysis vs. fast code generation).
+  - **Improvement**: Add an in-chat mode switcher (e.g., `/mode architect`, `/mode code`, `/mode review`) that dynamically swaps the active `system_instructions` without dropping conversational memory.
+
+---
+
 ### ⚠️ Invariant & Architecture Notice
 - **DO NOT replace `TerminalMarkdownStreamer` with `rich.live.Live`**:
   - While recommended by generic LLM reviews, `rich.live.Live` repaints the visible screen buffer in place. On long streaming answers, this destroys native OS terminal scrollback (users cannot scroll up) and causes truncation or screen flickering on window resize. Forward-only line streaming is an intentional architectural invariant.
