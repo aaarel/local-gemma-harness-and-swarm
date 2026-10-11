@@ -1,9 +1,19 @@
-import psutil
 import subprocess
 import curses
 import time
 import re
 import sys
+
+try:
+    import psutil
+except ImportError:
+    sys.stderr.write(
+        f"[!] 'psutil' is not installed for this interpreter ({sys.executable}).\n"
+        "    Run the monitor with the project's virtual environment instead:\n"
+        "      ./run_monitor.sh\n"
+        "      # or: .venv/bin/python monitor_m2.py\n"
+    )
+    sys.exit(1)
 
 def get_gpu_metrics():
     """
