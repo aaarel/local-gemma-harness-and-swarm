@@ -27,7 +27,7 @@
 - Register SDK hooks in `LiteRTAgentConfig(hooks=[on_pre_tool, on_post_tool])`:
   - `@hooks.pre_tool_call_decide`: Intercept `types.ToolCall` and display `⚡ Executing command: ...` or `⚡ Viewing file: ...`.
   - `@hooks.post_tool_call`: Display `✓ Tool completed (Xs)`.
-- Measure turn duration from user prompt to stream completion: `⏱ Worked for Xs`.
+- Measure turn duration and throughput from user prompt to stream completion: `⏱ 14.2s | thought 9.1s, 537 tok | TTFT 0.8s | ⚡ 33.4 tok/s (720 tok) | 🧠 14.8 GB VRAM (GPU 85%) | Turn 2 saved`.
 
 ### 4. Apple Silicon GPU Metrics (Zero-Sudo)
 - **Do not use `powermetrics`**: It strictly requires `sudo` and fails inside non-interactive subprocess calls.
@@ -55,4 +55,4 @@
   - Resume specific session: `./run_tui.sh --resume <session_id>`
   - List saved sessions: `./run_tui.sh --list`
 - **Session & Transcript Viewer**: `.venv/bin/python view_history.py`
-- **System Monitor**: `.venv/bin/python monitor_m2.py`
+- **System Monitor**: `./run_monitor.sh` (or `.venv/bin/python monitor_m2.py`)
