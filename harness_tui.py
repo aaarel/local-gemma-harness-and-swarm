@@ -68,10 +68,13 @@ class TerminalMarkdownStreamer:
         self.in_thought = False
         self.thought_start_time = 0.0
         self.thought_duration = 0.0
+        self.thought_tokens = 0
         self.has_thought = False
         self.buf = ""
 
     def feed(self, token: str):
+        if self.in_thought:
+            self.thought_tokens += 1
         self.buf += token
         while "\n" in self.buf:
             line, self.buf = self.buf.split("\n", 1)
@@ -85,7 +88,8 @@ class TerminalMarkdownStreamer:
         if self.in_thought:
             dur = max(0.1, time.time() - self.thought_start_time)
             self.thought_duration += dur
-            footer_label = f"└── 💭 Thought for {dur:.1f}s "
+            tok_str = f", {self.thought_tokens} tokens" if self.thought_tokens > 0 else ""
+            footer_label = f"└── 💭 Thought for {dur:.1f}s{tok_str} "
             footer_border = max(5, width - len(footer_label) + 8)
             sys.stdout.write(f"\033[2;35m{footer_label}{'─' * footer_border}\033[0m\n\n")
             self.in_thought = False
@@ -107,6 +111,8 @@ class TerminalMarkdownStreamer:
                     self.in_thought = True
                     self.has_thought = True
                     self.thought_start_time = time.time()
+                    if after.strip():
+                        self.thought_tokens += 1
                     border_len = max(5, width - 24)
                     sys.stdout.write(f"\033[2;35m┌── 💭 Thinking Process {'─' * border_len}\033[0m\n")
                     sys.stdout.flush()
@@ -124,7 +130,8 @@ class TerminalMarkdownStreamer:
                     self.in_thought = False
                     dur = max(0.1, time.time() - self.thought_start_time)
                     self.thought_duration += dur
-                    footer_label = f"└── 💭 Thought for {dur:.1f}s "
+                    tok_str = f", {self.thought_tokens} tokens" if self.thought_tokens > 0 else ""
+                    footer_label = f"└── 💭 Thought for {dur:.1f}s{tok_str} "
                     footer_border = max(5, width - len(footer_label) + 8)
                     sys.stdout.write(f"\033[2;35m{footer_label}{'─' * footer_border}\033[0m\n\n")
                     sys.stdout.flush()
@@ -636,12 +643,14 @@ async def main():
                         tokens_per_sec=tokens_per_sec,
                         gpu_vram_gb=gpu_mem,
                         thought_duration_sec=streamer.thought_duration,
+                        thought_tokens=streamer.thought_tokens,
                     )
                     
                     # Format rich performance telemetry badge in turn footer
                     footer_parts = [f"⏱ [white]{elapsed:.1f}s[/white]"]
                     if streamer.thought_duration > 0:
-                        footer_parts.append(f"thought [magenta]{streamer.thought_duration:.1f}s[/magenta]")
+                        t_tok_str = f", {streamer.thought_tokens} tok" if streamer.thought_tokens > 0 else ""
+                        footer_parts.append(f"thought [magenta]{streamer.thought_duration:.1f}s{t_tok_str}[/magenta]")
                     if ttft > 0:
                         footer_parts.append(f"TTFT [cyan]{ttft:.1f}s[/cyan]")
                     if tokens_per_sec > 0:
@@ -674,6 +683,7 @@ async def main():
                         tokens_per_sec=tokens_per_sec,
                         gpu_vram_gb=gpu_mem,
                         thought_duration_sec=streamer.thought_duration,
+                        thought_tokens=streamer.thought_tokens,
                     )
                     console.print(f"\n[bold yellow]⚡ Turn interrupted by user (Ctrl+C). Partial response preserved ({token_count} tok).[/bold yellow]\n")
                     continue

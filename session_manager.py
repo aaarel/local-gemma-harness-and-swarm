@@ -135,6 +135,7 @@ class Session:
         tokens_per_sec: Optional[float] = None,
         gpu_vram_gb: Optional[float] = None,
         thought_duration_sec: Optional[float] = None,
+        thought_tokens: Optional[int] = None,
     ):
         """Appends a completed conversation turn to transcript.md and events.jsonl with telemetry."""
         self.turn_count += 1
@@ -153,7 +154,10 @@ class Session:
         if duration_sec is not None:
             timing_parts.append(f"⏱ {duration_sec:.1f}s")
         if thought_duration_sec is not None and thought_duration_sec > 0:
-            timing_parts.append(f"thought {thought_duration_sec:.1f}s")
+            th_str = f"thought {thought_duration_sec:.1f}s"
+            if thought_tokens is not None and thought_tokens > 0:
+                th_str += f", {thought_tokens} tokens"
+            timing_parts.append(th_str)
         if ttft_sec is not None and ttft_sec > 0:
             timing_parts.append(f"TTFT {ttft_sec:.1f}s")
         if tokens_per_sec is not None and tokens_per_sec > 0:
@@ -184,6 +188,7 @@ class Session:
             "tokens_per_sec": tokens_per_sec,
             "gpu_vram_gb": gpu_vram_gb,
             "thought_duration_sec": thought_duration_sec,
+            "thought_tokens": thought_tokens,
         })
 
     def append_interrupted_turn(
@@ -196,6 +201,7 @@ class Session:
         tokens_per_sec: Optional[float] = None,
         gpu_vram_gb: Optional[float] = None,
         thought_duration_sec: Optional[float] = None,
+        thought_tokens: Optional[int] = None,
     ):
         """Preserves partial output when user presses Ctrl+C mid-generation with telemetry."""
         self.turn_count += 1
@@ -209,6 +215,11 @@ class Session:
             timing_parts.append(f"⏱ {duration_sec:.1f}s (Interrupted)")
         else:
             timing_parts.append("(Interrupted)")
+        if thought_duration_sec is not None and thought_duration_sec > 0:
+            th_str = f"thought {thought_duration_sec:.1f}s"
+            if thought_tokens is not None and thought_tokens > 0:
+                th_str += f", {thought_tokens} tokens"
+            timing_parts.append(th_str)
         if ttft_sec is not None and ttft_sec > 0:
             timing_parts.append(f"TTFT {ttft_sec:.1f}s")
         if tokens_per_sec is not None and tokens_per_sec > 0:
@@ -237,6 +248,7 @@ class Session:
             "tokens_per_sec": tokens_per_sec,
             "gpu_vram_gb": gpu_vram_gb,
             "thought_duration_sec": thought_duration_sec,
+            "thought_tokens": thought_tokens,
         })
 
     def log_tool_call(self, name: str, args: Dict[str, Any], duration_sec: float, allowed: bool, error: Optional[str] = None):

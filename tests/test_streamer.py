@@ -83,7 +83,10 @@ def test_thought_block_multiline_formatting():
     old_stdout = sys.stdout
     sys.stdout = buffer = io.StringIO()
     try:
-        streamer.feed("<thought>\nStep 1: Inspect problem\nStep 2: Generate solution\n</thought>\nHere is the answer.\n")
+        streamer.feed("<thought>\n")
+        streamer.feed("Step 1: Inspect problem\n")
+        streamer.feed("Step 2: Generate solution\n")
+        streamer.feed("</thought>\nHere is the answer.\n")
         streamer.flush()
         output = buffer.getvalue()
         assert "┌── 💭 Thinking Process" in output
@@ -91,6 +94,8 @@ def test_thought_block_multiline_formatting():
         assert "Step 1: Inspect problem" in output
         assert "Step 2: Generate solution" in output
         assert "└── 💭 Thought for" in output
+        assert "tokens" in output
+        assert streamer.thought_tokens >= 2
         assert "Here is the answer." in output
     finally:
         sys.stdout = old_stdout

@@ -97,6 +97,7 @@ def test_turn_telemetry_metrics():
             tokens_per_sec=32.4,
             gpu_vram_gb=14.8,
             thought_duration_sec=1.2,
+            thought_tokens=8,
         )
         
         # Verify events.jsonl structured logging
@@ -108,6 +109,7 @@ def test_turn_telemetry_metrics():
         assert turn_ev["tokens_per_sec"] == 32.4
         assert turn_ev["gpu_vram_gb"] == 14.8
         assert turn_ev["thought_duration_sec"] == 1.2
+        assert turn_ev["thought_tokens"] == 8
         
         # Verify transcript timing formatting
         transcript = session.transcript_file.read_text()
@@ -115,4 +117,4 @@ def test_turn_telemetry_metrics():
         assert "⚡ 32.4 tok/s" in transcript
         assert "25 tok" in transcript
         assert "🧠 14.8 GB VRAM" in transcript
-        assert "thought 1.2s" in transcript
+        assert "thought 1.2s, 8 tokens" in transcript
