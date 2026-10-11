@@ -5,7 +5,14 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
 from google.antigravity import types
-from swarm import LocalSwarm, HybridSwarm, PLANNER_PROMPT, WORKER_PROMPT, HYBRID_WORKER_PROMPT
+from swarm import (
+    LocalSwarm,
+    HybridSwarm,
+    PLANNER_PROMPT,
+    WORKER_PROMPT,
+    HYBRID_WORKER_PROMPT,
+    SECURITY_AUDITOR_PROMPT,
+)
 
 
 def test_local_swarm_config_creation(tmp_path):
@@ -26,31 +33,38 @@ def test_local_swarm_config_creation(tmp_path):
     assert rw_config.system_instructions.text == WORKER_PROMPT
 
 
-def test_hybrid_swarm_config_and_api_key_guard(tmp_path):
+def test_hybrid_swarm_configs_and_backends(tmp_path):
     workspace = tmp_path / "ws"
     workspace.mkdir()
 
-    # 1. Missing API Key raises ValueError
-    swarm_no_key = HybridSwarm(
+    # 1. GenAI backend without API Key raises ValueError
+    swarm_genai_no_key = HybridSwarm(
         model_path="/fake/path",
         workspace_path=str(workspace),
+        cloud_backend="genai",
         gemini_api_key="",
     )
     with pytest.raises(ValueError, match="GEMINI_API_KEY is not set"):
-        asyncio.run(swarm_no_key.execute_cloud_plan("Build infra").__anext__())
+        asyncio.run(swarm_genai_no_key._execute_cloud_plan_via_genai("Build infra").__anext__())
 
     # 2. Worker config uses CustomSystemInstructions with HYBRID_WORKER_PROMPT
-    swarm_with_key = HybridSwarm(
+    swarm_agy = HybridSwarm(
         model_path="/fake/path",
         workspace_path=str(workspace),
-        gemini_api_key="test_key_123",
-        gemini_model="gemini-2.5-flash",
+        cloud_backend="agy",
     )
-    worker_cfg = swarm_with_key._create_worker_config()
+    worker_cfg = swarm_agy._create_worker_config()
     assert worker_cfg.model_path == "/fake/path"
     assert worker_cfg.workspaces == [str(workspace)]
     assert isinstance(worker_cfg.system_instructions, types.CustomSystemInstructions)
     assert worker_cfg.system_instructions.text == HYBRID_WORKER_PROMPT
+
+    # 3. Reviewer config uses CustomSystemInstructions with SECURITY_AUDITOR_PROMPT
+    reviewer_cfg = swarm_agy._create_reviewer_config()
+    assert reviewer_cfg.model_path == "/fake/path"
+    assert reviewer_cfg.workspaces == [str(workspace)]
+    assert isinstance(reviewer_cfg.system_instructions, types.CustomSystemInstructions)
+    assert reviewer_cfg.system_instructions.text == SECURITY_AUDITOR_PROMPT
 
 
 @pytest.mark.anyio
@@ -61,19 +75,29 @@ async def test_hybrid_swarm_verification_no_tf(tmp_path):
     swarm = HybridSwarm(
         model_path="/fake/path",
         workspace_path=str(workspace),
-        gemini_api_key="test_key",
+        cloud_backend="agy",
     )
     result = await swarm.execute_verification()
     assert "No .tf files detected" in result
 
 
 @pytest.mark.anyio
-async def test_hybrid_swarm_verification_with_terraform(tmp_path):
-    workspace = tmp_path / "tf_ws"
+async def test_hybrid_swarm_verification_multi_stage(tmp_path):
+    workspace = tmp_path / "fast_ws"
     workspace.mkdir()
 
-    # Create a minimal valid terraform file
-    (workspace / "versions.tf").write_text("""
+    # Create two stages with minimal valid terraform files
+    stage0 = workspace / "0-bootstrap"
+    stage0.mkdir()
+    (stage0 / "versions.tf").write_text("""
+terraform {
+  required_version = ">= 1.0"
+}
+""")
+
+    stage1 = workspace / "1-resman"
+    stage1.mkdir()
+    (stage1 / "versions.tf").write_text("""
 terraform {
   required_version = ">= 1.0"
 }
@@ -82,12 +106,12 @@ terraform {
     swarm = HybridSwarm(
         model_path="/fake/path",
         workspace_path=str(workspace),
-        gemini_api_key="test_key",
+        cloud_backend="agy",
     )
     result = await swarm.execute_verification()
-    # If terraform is installed on machine, it should run init and validate
     if shutil.which("terraform"):
         assert "Running Terraform validation" in result
-        assert "terraform validate passed" in result or "terraform init" in result
+        assert "0-bootstrap" in result
+        assert "1-resman" in result
     else:
         assert "terraform binary not found" in result

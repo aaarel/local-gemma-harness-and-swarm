@@ -52,32 +52,33 @@ This document defines concrete, production-grade infrastructure engineering use 
 
 ## 📋 Evaluated Use Cases
 
-### Option A: Production-Grade GCP Terraform Module Scaffolding & Validation
-*Domain: Infrastructure as Code (IaC) & Cloud Security Architecture*
+### Option A: Cloud Foundation Fabric FAST Landing Zone & Operational Runbook (Small Customer)
+*Domain: Enterprise Landing Zones, Infrastructure as Code (IaC) & Cloud Foundation Fabric*
 
 #### Problem Statement
-Engineering teams often create ad-hoc Terraform configurations that violate cloud security benchmarks: exposing Cloud SQL on public IPs, using primitive IAM roles (`roles/editor`), hardcoding secrets in environment variables, or omitting Serverless VPC Access connectors. Writing production-grade, modular Terraform that adheres to CIS GCP Benchmarks requires significant boilerplate across multiple files (`main.tf`, `variables.tf`, `outputs.tf`, `iam.tf`, `versions.tf`).
+Setting up a secure, production-ready Google Cloud organization from scratch requires weeks of manual effort or complex bespoke Terraform code. Google Cloud's Professional Services Organization (PSO) created **Cloud Foundation Fabric FAST** to accelerate production setups. For small-to-medium customers (SMBs, startups), an off-the-shelf, streamlined landing zone is needed that can be rapidly configured, audited, and handed off with a clear operational runbook, without deploying premature enterprise complexity.
 
 #### Component Architecture Stack
-- **Compute**: Google Cloud Run v2 service with Direct VPC Egress or Serverless VPC Access Connector.
-- **Database**: Cloud SQL PostgreSQL instance configured exclusively with Private IP (RFC 1918) within a VPC Peering / Service Networking connection and Cloud SQL IAM Database Authentication.
-- **Security & IAM**: Dedicated least-privilege service accounts (no primitive roles), Secret Manager accessor bindings, and CMEK encryption stubs.
-- **Networking**: VPC subnet, Serverless connector / Direct Egress, Private Service Access (Service Networking).
+- **Toolkit**: Google Cloud Foundation Fabric FAST (`GoogleCloudPlatform/cloud-foundation-fabric/fast`).
+- **Stage 00 (`0-bootstrap`)**: Automation project (`fast-bootstrap`), Terraform state GCS bucket with uniform bucket-level access & versioning, CI/CD service accounts, centralized billing budget alerts, and org-level audit log sink.
+- **Stage 01 (`1-resman`)**: Streamlined folder hierarchy (`Platform` and `Workloads`), baseline CIS GCP v3.0 Level 1 Organization Policies (skip default VPC creation, disable external service account keys, enforce uniform bucket access), and group IAM role mappings.
+- **Stage 02 (`2-networking`)**: Single Shared VPC network, environment subnets (`prod` and `dev` in primary region `europe-west1`), Cloud NAT & Cloud Router (zero external public IPs on compute instances), Private Google Access, and secure firewall rules.
+- **Stage 03 (`3-project-factory`)**: Standardized tenant workload project attached as a service project to the Shared VPC with Workload Identity Federation.
+- **Operational Guide (`RUNBOOK.md`)**: Comprehensive Day-0 prerequisites, bootstrap execution, state migration to GCS, sequential stage execution order, and Day-2 operations.
 
 #### Division of Responsibilities
-* **Cloud Gemini (Planner)**:
-  - Formulates the exact module layout and dependency graph.
-  - Dictates provider constraints (`hashicorp/google ~> 6.0`, `google-beta`).
-  - Defines the variable interface with strict types, descriptions, and validation blocks.
-  - Enforces CIS GCP Benchmark guardrails (e.g. `ipv4_enabled = false`, `require_ssl = true`, `deletion_protection = true`).
-  - Emits an actionable, step-by-step implementation plan for the local coder.
-* **Local Gemma 4 (Worker)**:
-  - Scaffolds the modular file tree using `write_to_file`.
-  - Implements the complete HCL resource blocks according to the plan.
-  - Executes local verification commands (`terraform init -backend=false`, `terraform validate`, `tflint`).
-  - Iteratively fixes any syntax or schema mismatches until 100% clean.
-* **Future 3B Local Agent**:
-  - Performs quick HCL syntax linting and ensures all declared variables have descriptions and types.
+* **Cloud Gemini (Planner & Architect via Antigravity CLI `agy`)**:
+  - Requires **zero API keys** (leverages active Antigravity CLI session).
+  - Acts as Google Cloud PSO Lead Architect.
+  - Designs stage layouts, parameter schemas (`.tfvars`), security guardrails, and runbook table of contents.
+* **Local Gemma 4 26B (Worker & Coder on Apple Silicon Metal)**:
+  - Generates the complete 4-stage Terraform codebase and `RUNBOOK.md` in `workspaces/fast-landing-zone/`.
+  - Executes local tool calls offline with zero cloud billing.
+* **Local Gemma 4 26B (Security & Compliance Auditor in Isolated Context)**:
+  - Spins up in a fresh session to independently audit the generated HCL and `RUNBOOK.md` against CIS GCP Benchmark v3.0 Level 1.
+  - Generates an Audit Report with findings and remediation diffs.
+* **Iterative Remediation Loop**:
+  - Worker receives audit findings and applies targeted fixes until verification passes.
 
 ---
 
@@ -156,19 +157,22 @@ During a production incident on GCP, on-call engineers must rapidly parse dispar
 
 ---
 
-## 🎯 Current Target: Option A Implementation Plan
+## 🎯 Current Target: Option A — Cloud Foundation Fabric FAST Landing Zone Swarm
 
-We are executing **Option A: Production-Grade GCP Terraform Module Scaffolding & Validation**.
+We are executing **Option A: Cloud Foundation Fabric FAST Landing Zone & Operational Runbook (Small Customer)**.
 
 ### Pipeline Stages
-1. **Input Task**: User requests a secure, modular GCP Terraform module (e.g., Private Cloud Run v2 + Cloud SQL PostgreSQL with Private IP + Secret Manager + Least-Privilege IAM).
-2. **Stage 1 (Cloud Gemini Planner)**:
-   - Uses `google-genai` SDK with `gemini-2.5-flash` or `gemini-2.5-pro`.
-   - Sends the task specification and receives a structured, step-by-step implementation blueprint.
+1. **Input Task**: User requests an off-the-shelf, production-grade Fabric FAST landing zone for a small customer (Acme Corp, `acme-corp.com`, prefix `fast`, region `europe-west1`).
+2. **Stage 1 (Cloud Gemini Planner via Antigravity CLI `agy`)**:
+   - Zero API keys required (authenticated via active Antigravity CLI session).
+   - Generates the 4-stage FAST blueprint and RUNBOOK.md table of contents.
 3. **Stage 2 (Local Gemma 4 Worker)**:
    - Uses LiteRT Metal inference (`gemma-4-26B-A4B-it-gpu.litertlm`).
-   - Scaffolds module directory in `./workspace/terraform-gcp-secure-cloudrun/`.
-   - Writes `versions.tf`, `variables.tf`, `main.tf`, `iam.tf`, `outputs.tf`, and an `example/main.tf`.
-   - Executes `terraform init -backend=false` and `terraform validate` locally.
-4. **Stage 3 (Reviewer / Verifier)**:
-   - Verifies all files against the plan, checks `terraform validate` exit code, and reports final summary.
+   - Scaffolds `./workspaces/fast-landing-zone/` with `0-bootstrap`, `1-resman`, `2-networking`, `3-project-factory`, and `RUNBOOK.md`.
+4. **Stage 3 (Local Gemma 4 Security Auditor in Isolated Context)**:
+   - Independent audit of all files against CIS GCP Benchmark v3.0 Level 1.
+   - Emits an Audit Findings Report with `[PASS]` or `[REVISION NEEDED]`.
+5. **Stage 4 (Remediation Iteration Loop)**:
+   - Worker applies any requested fixes using `replace_file_content` / `write_to_file`.
+6. **Stage 5 (Automated CLI Verification)**:
+   - Runs `terraform validate` across all generated stages and outputs summary.
