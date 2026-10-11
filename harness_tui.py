@@ -22,7 +22,7 @@ from rich.table import Table
 from rich.syntax import Syntax
 
 from session_manager import SessionManager, Session
-from swarm import LocalSwarm
+from swarm import LocalSwarm, HybridSwarm
 from monitor_m2 import get_gpu_metrics
 
 DEFAULT_MODEL_PATH = os.path.expanduser("~/.litert-lm/models/gemma4-26b/model.litertlm")
@@ -471,7 +471,7 @@ async def main():
         f"[bold cyan]Workspace:[/bold cyan] {workspace_path}\n"
         f"[bold cyan]Model:[/bold cyan] {model_path}\n"
         f"[bold cyan]Engine:[/bold cyan] LiteRT on Apple Silicon Metal GPU ([bold green]100% Offline[/bold green])\n"
-        f"[bold cyan]Commands:[/bold cyan] [bold yellow]/sessions[/bold yellow] | [bold yellow]/swarm <task>[/bold yellow] | [bold yellow]/delete <#>[/bold yellow] | [bold yellow]/rename <name>[/bold yellow] | [bold yellow]/info[/bold yellow] | [bold yellow]/clear[/bold yellow] | [bold yellow]/exit[/bold yellow]"
+        f"[bold cyan]Commands:[/bold cyan] [bold yellow]/sessions[/bold yellow] | [bold yellow]/swarm <task>[/bold yellow] | [bold yellow]/hybrid <task>[/bold yellow] | [bold yellow]/delete <#>[/bold yellow] | [bold yellow]/rename <name>[/bold yellow] | [bold yellow]/info[/bold yellow] | [bold yellow]/clear[/bold yellow] | [bold yellow]/exit[/bold yellow]"
     )
     console.print(Panel(banner_text, title="[bold yellow]Gemma 4 Local Agent (Antigravity + LiteRT)[/bold yellow]", border_style="yellow"))
 
@@ -550,12 +550,26 @@ async def main():
                         console.print("[yellow]Usage: /delete <# or session ID>[/yellow]\n")
                     continue
 
-                if lower_prompt.startswith("/swarm"):
+                if lower_prompt.startswith(("/swarm", "/hybrid")):
+                    is_forced_hybrid = lower_prompt.startswith("/hybrid")
                     parts = user_prompt.split(maxsplit=1)
                     if len(parts) > 1 and parts[1].strip():
                         objective = parts[1].strip()
-                        console.print(f"\n[bold yellow]🐝 Launching Swarm (Planner → Worker → Reviewer)...[/bold yellow]")
-                        swarm = LocalSwarm(model_path, workspace_path, session=session)
+                        has_gemini_key = bool(os.environ.get("GEMINI_API_KEY"))
+                        if is_forced_hybrid and not has_gemini_key:
+                            console.print("\n[bold red][!] GEMINI_API_KEY is not set.[/bold red]")
+                            console.print("[dim]Add your key to .env or run: export GEMINI_API_KEY=your_key[/dim]\n")
+                            continue
+
+                        if has_gemini_key:
+                            gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+                            console.print(f"\n[bold yellow]🐝 Launching Hybrid Swarm (Cloud Gemini [{gemini_model}] → Local Gemma 4 → Verification)...[/bold yellow]")
+                            swarm = HybridSwarm(model_path, workspace_path, session=session)
+                        else:
+                            console.print(f"\n[bold yellow]🐝 Launching Local Swarm (Local Gemma Planner → Worker → Reviewer)...[/bold yellow]")
+                            console.print("[dim](Tip: Add GEMINI_API_KEY to .env to use Cloud Gemini as the architect)[/dim]")
+                            swarm = LocalSwarm(model_path, workspace_path, session=session)
+
                         streamer = TerminalMarkdownStreamer()
                         try:
                             async for stage, token in swarm.execute_swarm(objective):
@@ -566,7 +580,7 @@ async def main():
                             streamer.flush()
                             console.print("\n[bold yellow]⚡ Swarm execution aborted by user.[/bold yellow]\n")
                     else:
-                        console.print("[yellow]Usage: /swarm <task description or objective>[/yellow]\n")
+                        console.print("[yellow]Usage: /swarm <task> or /hybrid <task>[/yellow]\n")
                     continue
 
                 if lower_prompt.startswith("/rename"):
