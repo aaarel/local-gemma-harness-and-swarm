@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 import uuid
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -13,6 +14,24 @@ def safe_code_block(text: str) -> str:
         count += 1
     fence = "`" * count
     return f"{fence}text\n{text}\n{fence}"
+
+def format_transcript_response(text: str) -> str:
+    """Formats reasoning tags into collapsible HTML details in Markdown transcripts."""
+    for start_tag, end_tag in [
+        ("<thought>", "</thought>"),
+        ("<think>", "</think>"),
+        ("<|channel>thought\n", "<channel|>"),
+        ("<|channel>thought", "<channel|>"),
+    ]:
+        if start_tag in text and end_tag in text:
+            pattern = re.escape(start_tag) + r"(.*?)" + re.escape(end_tag)
+            text = re.sub(
+                pattern,
+                r"<details>\n<summary>💭 <i>Thought Process</i></summary>\n\n\1\n\n</details>",
+                text,
+                flags=re.DOTALL,
+            )
+    return text
 
 class Session:
     def __init__(
@@ -123,10 +142,11 @@ class Session:
         timing = f" *(⏱ {duration_sec:.1f}s)*" if duration_sec is not None else ""
         prompt_block = safe_code_block(user_prompt)
 
+        formatted_response = format_transcript_response(agent_response)
         with open(self.transcript_file, "a", encoding="utf-8") as f:
             f.write(f"### Turn {self.turn_count} — {now_str}{timing}\n\n")
             f.write(f"**You:**\n{prompt_block}\n\n")
-            f.write(f"**Gemma 4:**\n\n{agent_response}\n\n")
+            f.write(f"**Gemma 4:**\n\n{formatted_response}\n\n")
             f.write("---\n\n")
 
         self.log_event("turn_complete", {
@@ -147,11 +167,12 @@ class Session:
         timing = f" *(⏱ {duration_sec:.1f}s - Interrupted)*" if duration_sec is not None else " *(Interrupted)*"
         prompt_block = safe_code_block(user_prompt)
         content = partial_response.strip() or "*(No output produced before interruption)*"
+        formatted_content = format_transcript_response(content)
 
         with open(self.transcript_file, "a", encoding="utf-8") as f:
             f.write(f"### Turn {self.turn_count} — {now_str}{timing}\n\n")
             f.write(f"**You:**\n{prompt_block}\n\n")
-            f.write(f"**Gemma 4 (Partial):**\n\n{content}\n\n> ⚠️ *Turn interrupted by user (Ctrl+C)*\n\n")
+            f.write(f"**Gemma 4 (Partial):**\n\n{formatted_content}\n\n> ⚠️ *Turn interrupted by user (Ctrl+C)*\n\n")
             f.write("---\n\n")
 
         self.log_event("turn_interrupted", {

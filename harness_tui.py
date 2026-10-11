@@ -31,18 +31,24 @@ DEFAULT_SYSTEM_INSTRUCTIONS = """You are Gemma, an expert autonomous software en
 
 CORE OPERATIONAL GUIDELINES:
 
-1. TOOL USAGE & EXECUTION CONSTRAINTS:
+1. REASONING & CHAIN-OF-THOUGHT:
+   - For all complex technical queries, multi-step problem solving, code implementations, debugging, and tool planning, begin your response by reasoning inside <thought> ... </thought> tags.
+   - Use the <thought> block to analyze the request, identify constraints, evaluate edge cases, and plan exact tool invocations or code edits before acting.
+   - Keep internal thinking structured, analytical, and concise.
+   - Close the </thought> block before delivering your final answer to the user or executing actions.
+
+2. TOOL USAGE & EXECUTION CONSTRAINTS:
    - Only call tools (run_command, view_file, write_to_file, replace_file_content) when explicitly needed to inspect/edit files or run terminal commands.
    - If the user asks a general knowledge or explanation question, answer directly in text without calling tools.
    - If the user explicitly instructs "do not execute", "dry run", or "review only", NEVER invoke execution or modification tools.
    - Before modifying or editing an existing file, always inspect it first using view_file.
 
-2. CODE QUALITY & ACCURACY:
+3. CODE QUALITY & ACCURACY:
    - Write clean, modular, production-ready code.
    - Do NOT use placeholder comments, omitted blocks, or "// TODO" shortcuts—provide complete, working implementations.
    - Preserve existing project architecture, coding standards, and indentation styles.
 
-3. COMMUNICATION & TERMINAL STREAMING:
+4. COMMUNICATION & TERMINAL STREAMING:
    - Keep answers direct, concise, and technically rigorous. Avoid unnecessary conversational filler.
    - Format outputs with clean, standard Markdown (code fences, lists, tables) tailored for terminal readability."""
 
@@ -51,9 +57,17 @@ class TerminalMarkdownStreamer:
     Forward-only streaming markdown formatter.
     Preserves 100% of terminal scrollback, prevents truncation,
     and supports dynamic window reflow without screen redrawing.
+    Supports styled reasoning/thought blocks (<thought>...</thought>).
     """
+    THOUGHT_START_TAGS = ("<thought>", "<think>", "<|channel>thought")
+    THOUGHT_END_TAGS = ("</thought>", "</think>", "<channel|>")
+
     def __init__(self):
         self.in_code = False
+        self.in_thought = False
+        self.thought_start_time = 0.0
+        self.thought_duration = 0.0
+        self.has_thought = False
         self.buf = ""
 
     def feed(self, token: str):
@@ -66,15 +80,68 @@ class TerminalMarkdownStreamer:
         if self.buf:
             self._print_line(self.buf)
             self.buf = ""
+        width = min(60, max(30, shutil.get_terminal_size().columns - 4))
+        if self.in_thought:
+            dur = max(0.1, time.time() - self.thought_start_time)
+            self.thought_duration += dur
+            footer_label = f"└── 💭 Thought for {dur:.1f}s "
+            footer_border = max(5, width - len(footer_label) + 8)
+            sys.stdout.write(f"\033[2;35m{footer_label}{'─' * footer_border}\033[0m\n\n")
+            self.in_thought = False
         if self.in_code:
-            width = min(60, max(30, shutil.get_terminal_size().columns - 4))
             sys.stdout.write(f"\033[1;36m└{'─' * width}\033[0m\n")
             self.in_code = False
         sys.stdout.flush()
 
     def _print_line(self, line: str):
-        stripped = line.strip()
         width = min(60, max(30, shutil.get_terminal_size().columns - 4))
+
+        # Check for thought start tags if not already in thought
+        if not self.in_thought:
+            for start_tag in self.THOUGHT_START_TAGS:
+                if start_tag in line:
+                    before, _, after = line.partition(start_tag)
+                    if before.strip():
+                        self._print_line(before)
+                    self.in_thought = True
+                    self.has_thought = True
+                    self.thought_start_time = time.time()
+                    border_len = max(5, width - 24)
+                    sys.stdout.write(f"\033[2;35m┌── 💭 Thinking Process {'─' * border_len}\033[0m\n")
+                    sys.stdout.flush()
+                    if after.strip():
+                        self._print_line(after)
+                    return
+
+        # Check for thought end tags if currently in thought
+        if self.in_thought:
+            for end_tag in self.THOUGHT_END_TAGS:
+                if end_tag in line:
+                    before, _, after = line.partition(end_tag)
+                    if before.strip():
+                        sys.stdout.write(f"\033[2;35m│\033[0m \033[2;37m{before}\033[0m\n")
+                    self.in_thought = False
+                    dur = max(0.1, time.time() - self.thought_start_time)
+                    self.thought_duration += dur
+                    footer_label = f"└── 💭 Thought for {dur:.1f}s "
+                    footer_border = max(5, width - len(footer_label) + 8)
+                    sys.stdout.write(f"\033[2;35m{footer_label}{'─' * footer_border}\033[0m\n\n")
+                    sys.stdout.flush()
+                    if after.strip():
+                        self._print_line(after)
+                    return
+
+            # Inside thought block: render with dim purple border and dim text
+            bullet_match = re.match(r"^(\s*)[-*]\s+(.*)$", line)
+            if bullet_match:
+                indent, content = bullet_match.group(1), bullet_match.group(2)
+                sys.stdout.write(f"\033[2;35m│\033[0m {indent}\033[2;35m•\033[0m \033[2;37m{content}\033[0m\n")
+            else:
+                sys.stdout.write(f"\033[2;35m│\033[0m \033[2;37m{line}\033[0m\n")
+            sys.stdout.flush()
+            return
+
+        stripped = line.strip()
 
         if stripped.startswith("```"):
             if not self.in_code:
@@ -415,7 +482,7 @@ async def main():
         workspaces=[workspace_path],
         policies=[policy.allow_all()],  # SDK policies allow hook to manage confirmations
         hooks=[on_pre_tool, on_post_tool],  # Hook enforces safety confirmations
-        system_instructions=system_instructions,
+        system_instructions=types.CustomSystemInstructions(text=system_instructions),
         conversation_id=session.session_id,  # Native Antigravity conversation ID
         session_continuation_mode=types.SessionContinuationMode.CREATE_OR_RESUME,
         save_dir=str(session.conversation_dir),  # Persistent trajectory state
@@ -546,7 +613,8 @@ async def main():
                     elapsed = time.time() - start_time
                     full_response = "".join(tokens_collected)
                     session.append_turn(user_prompt, full_response, duration_sec=elapsed)
-                    console.print(f"\n[dim gray]⏱ Worked for {elapsed:.1f}s | Turn {session.turn_count} saved[/dim gray]\n")
+                    thought_info = f" (thought {streamer.thought_duration:.1f}s)" if streamer.thought_duration > 0 else ""
+                    console.print(f"\n[dim gray]⏱ Worked for {elapsed:.1f}s{thought_info} | Turn {session.turn_count} saved[/dim gray]\n")
                 except (KeyboardInterrupt, asyncio.CancelledError):
                     streamer.flush()
                     elapsed = time.time() - start_time

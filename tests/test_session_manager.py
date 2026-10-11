@@ -69,3 +69,17 @@ def test_session_lifecycle_and_atomic_writes():
         # Deletion
         assert sm.delete_session("1") is True
         assert sm.get_session(session.session_id) is None
+
+def test_thought_formatting_in_transcript():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sm = SessionManager(tmpdir)
+        session = sm.create_session(title="Thought Test", model="gemma4-26b")
+        response_with_thought = "<thought>\nAnalyzing query\nPlanning answer\n</thought>\nHere is the final answer."
+        session.append_turn("Explain recursion", response_with_thought, duration_sec=2.1)
+        
+        transcript = session.transcript_file.read_text()
+        assert "<details>" in transcript
+        assert "<summary>💭 <i>Thought Process</i></summary>" in transcript
+        assert "Analyzing query" in transcript
+        assert "</details>" in transcript
+        assert "Here is the final answer." in transcript

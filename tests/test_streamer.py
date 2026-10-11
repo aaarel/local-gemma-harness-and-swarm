@@ -77,3 +77,49 @@ def test_render_diff_preview_new_file():
         assert "print('hello world')" in output
     finally:
         sys.stdout = old_stdout
+
+def test_thought_block_multiline_formatting():
+    streamer = TerminalMarkdownStreamer()
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+    try:
+        streamer.feed("<thought>\nStep 1: Inspect problem\nStep 2: Generate solution\n</thought>\nHere is the answer.\n")
+        streamer.flush()
+        output = buffer.getvalue()
+        assert "┌── 💭 Thinking Process" in output
+        assert "│" in output
+        assert "Step 1: Inspect problem" in output
+        assert "Step 2: Generate solution" in output
+        assert "└── 💭 Thought for" in output
+        assert "Here is the answer." in output
+    finally:
+        sys.stdout = old_stdout
+
+def test_thought_inline_formatting():
+    streamer = TerminalMarkdownStreamer()
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+    try:
+        streamer.feed("<thought>Analyzing requirements...</thought>\nDirect output.\n")
+        streamer.flush()
+        output = buffer.getvalue()
+        assert "┌── 💭 Thinking Process" in output
+        assert "Analyzing requirements..." in output
+        assert "└── 💭 Thought for" in output
+        assert "Direct output." in output
+    finally:
+        sys.stdout = old_stdout
+
+def test_thought_unclosed_flush():
+    streamer = TerminalMarkdownStreamer()
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+    try:
+        streamer.feed("<thought>\nThinking without end tag")
+        streamer.flush()
+        output = buffer.getvalue()
+        assert "┌── 💭 Thinking Process" in output
+        assert "Thinking without end tag" in output
+        assert "└── 💭 Thought for" in output
+    finally:
+        sys.stdout = old_stdout
