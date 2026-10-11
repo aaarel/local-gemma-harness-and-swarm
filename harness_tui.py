@@ -23,6 +23,7 @@ from rich.syntax import Syntax
 
 from session_manager import SessionManager, Session
 from swarm import LocalSwarm
+from monitor_m2 import get_gpu_metrics
 
 DEFAULT_MODEL_PATH = os.path.expanduser("~/.litert-lm/models/gemma4-26b/model.litertlm")
 console = Console()
@@ -599,6 +600,7 @@ async def main():
 
                 console.print("\n[bold green]Gemma 4 >[/bold green]")
                 start_time = time.time()
+                first_token_time = None
                 streamer = TerminalMarkdownStreamer()
                 current_streamer = streamer
                 tokens_collected = []
@@ -607,20 +609,73 @@ async def main():
                 try:
                     response = await agent.chat(user_prompt)
                     async for token in response:
+                        if first_token_time is None:
+                            first_token_time = time.time()
                         tokens_collected.append(token)
                         streamer.feed(token)
                     streamer.flush()
-                    elapsed = time.time() - start_time
+                    end_time = time.time()
+                    elapsed = end_time - start_time
+                    ttft = (first_token_time - start_time) if first_token_time else 0.0
+                    token_count = len(tokens_collected)
+                    
+                    # Compute pure decode throughput (time from first token to stream completion)
+                    decode_duration = max(0.001, end_time - (first_token_time or start_time))
+                    tokens_per_sec = (token_count / decode_duration) if token_count > 0 and decode_duration > 0 else 0.0
+                    
+                    # Sample Apple Silicon GPU metrics (zero sudo)
+                    gpu_util, gpu_mem = get_gpu_metrics()
+
                     full_response = "".join(tokens_collected)
-                    session.append_turn(user_prompt, full_response, duration_sec=elapsed)
-                    thought_info = f" (thought {streamer.thought_duration:.1f}s)" if streamer.thought_duration > 0 else ""
-                    console.print(f"\n[dim gray]⏱ Worked for {elapsed:.1f}s{thought_info} | Turn {session.turn_count} saved[/dim gray]\n")
+                    session.append_turn(
+                        user_prompt,
+                        full_response,
+                        duration_sec=elapsed,
+                        ttft_sec=ttft,
+                        tokens_generated=token_count,
+                        tokens_per_sec=tokens_per_sec,
+                        gpu_vram_gb=gpu_mem,
+                        thought_duration_sec=streamer.thought_duration,
+                    )
+                    
+                    # Format rich performance telemetry badge in turn footer
+                    footer_parts = [f"⏱ [white]{elapsed:.1f}s[/white]"]
+                    if streamer.thought_duration > 0:
+                        footer_parts.append(f"thought [magenta]{streamer.thought_duration:.1f}s[/magenta]")
+                    if ttft > 0:
+                        footer_parts.append(f"TTFT [cyan]{ttft:.1f}s[/cyan]")
+                    if tokens_per_sec > 0:
+                        footer_parts.append(f"⚡ [bold cyan]{tokens_per_sec:.1f} tok/s[/bold cyan] [dim]({token_count} tok)[/dim]")
+                    if gpu_mem is not None and gpu_mem > 0:
+                        gpu_str = f"🧠 [yellow]{gpu_mem:.1f} GB VRAM[/yellow]"
+                        if gpu_util is not None and gpu_util > 0:
+                            gpu_str += f" [dim](GPU {int(gpu_util)}%)[/dim]"
+                        footer_parts.append(gpu_str)
+                    footer_parts.append(f"[green]Turn {session.turn_count} saved[/green]")
+                    
+                    footer_line = " | ".join(footer_parts)
+                    console.print(f"\n[dim]{footer_line}[/dim]\n")
                 except (KeyboardInterrupt, asyncio.CancelledError):
                     streamer.flush()
-                    elapsed = time.time() - start_time
+                    end_time = time.time()
+                    elapsed = end_time - start_time
+                    ttft = (first_token_time - start_time) if first_token_time else 0.0
+                    token_count = len(tokens_collected)
+                    decode_duration = max(0.001, end_time - (first_token_time or start_time))
+                    tokens_per_sec = (token_count / decode_duration) if token_count > 0 and decode_duration > 0 else 0.0
+                    gpu_util, gpu_mem = get_gpu_metrics()
                     partial_response = "".join(tokens_collected)
-                    session.append_interrupted_turn(user_prompt, partial_response, duration_sec=elapsed)
-                    console.print(f"\n[bold yellow]⚡ Turn interrupted by user (Ctrl+C). Partial response preserved in session.[/bold yellow]\n")
+                    session.append_interrupted_turn(
+                        user_prompt,
+                        partial_response,
+                        duration_sec=elapsed,
+                        ttft_sec=ttft,
+                        tokens_generated=token_count,
+                        tokens_per_sec=tokens_per_sec,
+                        gpu_vram_gb=gpu_mem,
+                        thought_duration_sec=streamer.thought_duration,
+                    )
+                    console.print(f"\n[bold yellow]⚡ Turn interrupted by user (Ctrl+C). Partial response preserved ({token_count} tok).[/bold yellow]\n")
                     continue
                 finally:
                     current_streamer = None

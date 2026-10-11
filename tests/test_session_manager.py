@@ -83,3 +83,36 @@ def test_thought_formatting_in_transcript():
         assert "Analyzing query" in transcript
         assert "</details>" in transcript
         assert "Here is the final answer." in transcript
+
+def test_turn_telemetry_metrics():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sm = SessionManager(tmpdir)
+        session = sm.create_session(title="Telemetry Test", model="gemma4-26b")
+        session.append_turn(
+            user_prompt="Count to 10",
+            agent_response="1 2 3 4 5 6 7 8 9 10",
+            duration_sec=3.5,
+            ttft_sec=0.8,
+            tokens_generated=25,
+            tokens_per_sec=32.4,
+            gpu_vram_gb=14.8,
+            thought_duration_sec=1.2,
+        )
+        
+        # Verify events.jsonl structured logging
+        with open(session.events_file, "r") as f:
+            events = [json.loads(line) for line in f]
+        turn_ev = [e for e in events if e.get("event") == "turn_complete"][0]
+        assert turn_ev["ttft_sec"] == 0.8
+        assert turn_ev["tokens_generated"] == 25
+        assert turn_ev["tokens_per_sec"] == 32.4
+        assert turn_ev["gpu_vram_gb"] == 14.8
+        assert turn_ev["thought_duration_sec"] == 1.2
+        
+        # Verify transcript timing formatting
+        transcript = session.transcript_file.read_text()
+        assert "TTFT 0.8s" in transcript
+        assert "⚡ 32.4 tok/s" in transcript
+        assert "25 tok" in transcript
+        assert "🧠 14.8 GB VRAM" in transcript
+        assert "thought 1.2s" in transcript

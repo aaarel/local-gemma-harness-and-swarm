@@ -125,8 +125,18 @@ class Session:
                     f.write(f"- **Model:** `{self.model}`\n")
                 f.write("\n---\n\n")
 
-    def append_turn(self, user_prompt: str, agent_response: str, duration_sec: Optional[float] = None):
-        """Appends a completed conversation turn to transcript.md and events.jsonl."""
+    def append_turn(
+        self,
+        user_prompt: str,
+        agent_response: str,
+        duration_sec: Optional[float] = None,
+        ttft_sec: Optional[float] = None,
+        tokens_generated: Optional[int] = None,
+        tokens_per_sec: Optional[float] = None,
+        gpu_vram_gb: Optional[float] = None,
+        thought_duration_sec: Optional[float] = None,
+    ):
+        """Appends a completed conversation turn to transcript.md and events.jsonl with telemetry."""
         self.turn_count += 1
         self.updated_at = datetime.now().isoformat()
         
@@ -139,7 +149,22 @@ class Session:
         self._ensure_transcript_header()
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        timing = f" *(⏱ {duration_sec:.1f}s)*" if duration_sec is not None else ""
+        timing_parts = []
+        if duration_sec is not None:
+            timing_parts.append(f"⏱ {duration_sec:.1f}s")
+        if thought_duration_sec is not None and thought_duration_sec > 0:
+            timing_parts.append(f"thought {thought_duration_sec:.1f}s")
+        if ttft_sec is not None and ttft_sec > 0:
+            timing_parts.append(f"TTFT {ttft_sec:.1f}s")
+        if tokens_per_sec is not None and tokens_per_sec > 0:
+            t_str = f"⚡ {tokens_per_sec:.1f} tok/s"
+            if tokens_generated is not None and tokens_generated > 0:
+                t_str += f" ({tokens_generated} tok)"
+            timing_parts.append(t_str)
+        if gpu_vram_gb is not None and gpu_vram_gb > 0:
+            timing_parts.append(f"🧠 {gpu_vram_gb:.1f} GB VRAM")
+
+        timing = f" *({' | '.join(timing_parts)})*" if timing_parts else ""
         prompt_block = safe_code_block(user_prompt)
 
         formatted_response = format_transcript_response(agent_response)
@@ -154,17 +179,44 @@ class Session:
             "prompt": user_prompt,
             "response": agent_response,
             "duration_sec": duration_sec,
+            "ttft_sec": ttft_sec,
+            "tokens_generated": tokens_generated,
+            "tokens_per_sec": tokens_per_sec,
+            "gpu_vram_gb": gpu_vram_gb,
+            "thought_duration_sec": thought_duration_sec,
         })
 
-    def append_interrupted_turn(self, user_prompt: str, partial_response: str, duration_sec: Optional[float] = None):
-        """Preserves partial output when user presses Ctrl+C mid-generation."""
+    def append_interrupted_turn(
+        self,
+        user_prompt: str,
+        partial_response: str,
+        duration_sec: Optional[float] = None,
+        ttft_sec: Optional[float] = None,
+        tokens_generated: Optional[int] = None,
+        tokens_per_sec: Optional[float] = None,
+        gpu_vram_gb: Optional[float] = None,
+        thought_duration_sec: Optional[float] = None,
+    ):
+        """Preserves partial output when user presses Ctrl+C mid-generation with telemetry."""
         self.turn_count += 1
         self.updated_at = datetime.now().isoformat()
         self.save()
         self._ensure_transcript_header()
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        timing = f" *(⏱ {duration_sec:.1f}s - Interrupted)*" if duration_sec is not None else " *(Interrupted)*"
+        timing_parts = []
+        if duration_sec is not None:
+            timing_parts.append(f"⏱ {duration_sec:.1f}s (Interrupted)")
+        else:
+            timing_parts.append("(Interrupted)")
+        if ttft_sec is not None and ttft_sec > 0:
+            timing_parts.append(f"TTFT {ttft_sec:.1f}s")
+        if tokens_per_sec is not None and tokens_per_sec > 0:
+            timing_parts.append(f"⚡ {tokens_per_sec:.1f} tok/s")
+        if gpu_vram_gb is not None and gpu_vram_gb > 0:
+            timing_parts.append(f"🧠 {gpu_vram_gb:.1f} GB VRAM")
+
+        timing = f" *({' | '.join(timing_parts)})*"
         prompt_block = safe_code_block(user_prompt)
         content = partial_response.strip() or "*(No output produced before interruption)*"
         formatted_content = format_transcript_response(content)
@@ -180,6 +232,11 @@ class Session:
             "prompt": user_prompt,
             "partial_response": partial_response,
             "duration_sec": duration_sec,
+            "ttft_sec": ttft_sec,
+            "tokens_generated": tokens_generated,
+            "tokens_per_sec": tokens_per_sec,
+            "gpu_vram_gb": gpu_vram_gb,
+            "thought_duration_sec": thought_duration_sec,
         })
 
     def log_tool_call(self, name: str, args: Dict[str, Any], duration_sec: float, allowed: bool, error: Optional[str] = None):
