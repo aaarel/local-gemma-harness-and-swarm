@@ -23,15 +23,18 @@ This harness turns a local Gemma checkpoint into a capable, on-device software e
 | Capability | What It Does |
 | :--- | :--- |
 | **100% On-Device Metal Inference** | Runs Gemma 4 26B A4B (~14.7 GiB) directly in Unified Memory with zero external network calls. |
+| **Live Chain-of-Thought Reasoning** | Streams step-by-step thinking in a dedicated UI box (`┌── 💭 Thinking Process ──`), tracking thought duration and tokens (`Thought for 9s, 537 tokens`). |
+| **Real-Time Turn Telemetry** | Per-turn metrics in the footer: Time to First Token (TTFT), decode speed (`⚡ tok/s`), tokens produced, and live Apple Silicon VRAM/GPU%. |
 | **Agentic Coding Primitives** | Equipped with native tools: `view_file`, `write_to_file`, `replace_file_content`, and `run_command`. |
+| **Visual Diff Confirmation** | Colorized unified diff preview on file modifications before prompting for user confirmation. |
 | **Interactive Safety & YOLO Mode** | Safe by default: write and shell actions require confirmation (`[y/N/a]`). Pass `--yolo` for autonomous workflows. |
 | **Workspace Sandboxing** | Target specific directories with `--workspace <path>`, preventing accidental edits to the harness codebase. |
 | **Multi-Agent Swarm Pipeline** | Orchestrates specialized roles (Planner → Worker → Reviewer) sequentially over a single shared model instance *(WIP)*. |
-| **Zero-Data-Loss Logging** | Every interaction is logged to both human-readable Markdown (`transcript.md`) and structured JSONL (`events.jsonl`). |
+| **Zero-Data-Loss Logging** | Every interaction is logged to both human-readable Markdown (`transcript.md`) with collapsible `<details>` thought blocks and structured JSONL (`events.jsonl`). |
 | **Non-Destructive Turn Interruption** | Pressing `Ctrl+C` halts only the current stream, preserves partial output, and keeps the REPL session alive. |
 | **Atomic Metadata Writes** | Writes session state via temporary files and `os.replace` to prevent metadata corruption on crashes. |
 | **Forward-Only Terminal Streaming** | Preserves 100% native OS scrollback and reflows cleanly without redraw flickering or truncation. |
-| **Zero-Sudo Hardware Telemetry** | Queries macOS `IOAccelerator` directly via `monitor_m2.py` for real-time GPU %, VRAM, CPU, and RAM without root access. |
+| **Zero-Sudo Hardware Telemetry** | Queries macOS `IOAccelerator` directly via `./run_monitor.sh` for real-time GPU %, VRAM, CPU, and RAM without root access. |
 | **Session Management CLI** | Commands to list, resume by numeric index (`--resume 1`), inspect transcripts, and delete past sessions. |
 
 ---
@@ -50,6 +53,50 @@ Tested on Apple Silicon (**M2 Pro, 32 GB Unified Memory**) running **Gemma 4 26B
 
 > [!NOTE]
 > **Hardware Guidance**: 24 GB+ Unified Memory is recommended for comfortable headroom with Gemma 4 26B. Machines with 16 GB RAM can run Gemma 2B or 9B variants by passing `--model <path>`.
+
+---
+
+## 💭 Chain-of-Thought Reasoning & Thinking UI
+
+For complex coding, planning, and multi-step problem solving, Gemma reasons step-by-step before delivering answers or calling tools. The harness features a dedicated, forward-only stream parser for internal thoughts (`<thought>` tags and native `<|channel>thought` channels):
+
+```text
+┌── 💭 Thinking Process ────────────────────────────────────
+│ 1. Inspect session_manager.py to check existing telemetry keys
+│ 2. Add thought_tokens parameter with optional None default
+│ 3. Update transcript.md writer to format collapsible details
+│ 4. Run pytest suite to verify backwards compatibility
+└── 💭 Thought for 9.1s, 537 tokens ────────────────────────
+
+Here is the implementation plan and the corresponding diff...
+```
+
+* **Live Duration & Token Count**: The thought box footer records exact reasoning time and tokens consumed (matching the `agy` CLI experience: `Thought for 9.1s, 537 tokens`).
+* **Collapsible Transcripts**: In saved `transcript.md` records, thought blocks automatically render as HTML `<details><summary>💭 <i>Thought Process</i></summary>...</details>` dropdowns, keeping Markdown documents clean and scannable in GitHub, VS Code, or Obsidian.
+* **Scrollback-Safe**: Unlike screen-redrawing libraries, thought streaming preserves 100% of native terminal scrollback.
+
+---
+
+## ⚡ Real-Time Performance Telemetry
+
+Every conversation turn concludes with a rich, single-line telemetry footer tracking on-device Metal inference:
+
+```text
+⏱ 14.2s | thought 9.1s, 537 tok | TTFT 0.8s | ⚡ 33.4 tok/s (720 tok) | 🧠 14.8 GB VRAM (GPU 85%) | Turn 2 saved
+```
+
+| Telemetry Metric | What It Measures |
+| :--- | :--- |
+| **`⏱ 14.2s`** | Total wall-clock time elapsed from user prompt submission to final token flush. |
+| **`thought 9.1s, 537 tok`** | Time and token budget spent inside `<thought>` reasoning blocks. |
+| **`TTFT 0.8s`** | **Time to First Token** (prefill latency): time until the initial token streams from Metal. |
+| **`⚡ 33.4 tok/s`** | Pure decode throughput: tokens generated per second after prefill completion. |
+| **`(720 tok)`** | Total tokens generated in the turn. |
+| **`🧠 14.8 GB VRAM`** | Real-time Apple Silicon Unified Memory allocated by `IOAccelerator` (zero sudo). |
+| **`(GPU 85%)`** | Instantaneous Metal GPU core utilization percentage. |
+| **`Turn 2 saved`** | Confirms atomic state persistence to disk. |
+
+All metrics are recorded as structured fields in `./sessions/<id>/events.jsonl` for automated benchmarking.
 
 ---
 
@@ -78,14 +125,15 @@ You [1] > /swarm Add unit tests for session_manager.py and verify coverage
 
 | File | Purpose |
 | :--- | :--- |
-| **`harness_tui.py`** | Interactive REPL with `prompt_toolkit`, forward-only streaming, safety gates, and slash commands. |
+| **`harness_tui.py`** | Interactive REPL with `prompt_toolkit`, forward-only streaming, reasoning UI, safety gates, and slash commands. |
 | **`swarm.py`** | Sequential multi-agent pipeline (Planner → Worker → Reviewer) sharing the LiteRT Metal model. *(WIP)* |
-| **`session_manager.py`** | Session persistence engine handling atomic metadata, `events.jsonl` audit trails, and transcripts. |
+| **`session_manager.py`** | Session persistence engine handling atomic metadata, telemetry logging, `events.jsonl` audit trails, and transcripts. |
 | **`monitor_m2.py`** | Zero-sudo Curses monitor tracking Apple Silicon GPU utilization %, VRAM allocation, CPU, and RAM. |
+| **`run_monitor.sh`** | Safe shell launcher invoking `monitor_m2.py` inside the project virtual environment. |
 | **`view_history.py`** | CLI tool to inspect session tables, view formatted transcripts, and delete past sessions. |
 | **`smoke.py`** | Diagnostic script to verify LiteRT Metal GPU initialization and on-device inference. |
 | **`run_tui.sh`** | Shell launcher forwarding arguments to the virtual environment. |
-| **`tests/`** | Unit test suite covering session persistence, atomic writes, streamer formatting, and backtick safety. |
+| **`tests/`** | Unit test suite covering session persistence, telemetry logging, thought streaming, and diff safety. |
 
 ---
 
@@ -101,14 +149,21 @@ source .venv/bin/activate
 uv pip install -r requirements.txt pytest
 ```
 
-### 2. Verify Inference
+### 2. Download Gemma 4 26B Checkpoint
+Download and import the optimized on-device LiteRT checkpoint directly into `~/.litert-lm/models/gemma4-26b/`:
+```bash
+.venv/bin/litert-lm import --from-huggingface-repo litert-community/gemma-4-26B-A4B-it-litert-lm gemma-4-26B-A4B-it-gpu.litertlm gemma4-26b
+```
+
+### 3. Verify Inference
+Run the diagnostic smoke test (compiles Metal GPU shaders on initial run):
 ```bash
 .venv/bin/python smoke.py
 ```
 
-### 3. Launch the Interactive REPL
+### 4. Launch the Interactive REPL & Monitor
 ```bash
-# Safe mode (prompts before write/exec tools)
+# Terminal 1: Safe mode (prompts before write/exec tools)
 ./run_tui.sh
 
 # Autonomous mode (auto-approves tool execution)
@@ -119,6 +174,9 @@ uv pip install -r requirements.txt pytest
 
 # Resume a previous session by number (#) or ID
 ./run_tui.sh --resume 1
+
+# Terminal 2 (optional): Live Apple Silicon GPU / VRAM monitor (zero sudo)
+./run_monitor.sh
 ```
 
 ---
@@ -144,9 +202,12 @@ pytest tests/
 ```
 Tests validate:
 - Atomic file write mechanisms and crash resilience.
-- Structured event logging in `events.jsonl`.
+- Structured event logging in `events.jsonl` with full turn performance telemetry.
 - Dynamic backtick collision safety (`safe_code_block`).
 - Line-buffered markdown streaming and nested bullet point preservation.
+- Live reasoning block formatting (`<thought>` streaming) and token counting.
+- Collapsible `<details>` thought formatting in Markdown transcripts.
+- Visual unified diff preview rendering on file replacements and writes.
 
 ---
 
