@@ -25,10 +25,12 @@ This skill encapsulates the exact architecture, scripts, operational workflows, 
 | **Session Manager** | [`session_manager.py`](../../../session_manager.py) | Atomic session storage, turn telemetry computation, markdown transcripts, and `events.jsonl` audit trails. |
 | **Monitor Launcher** | [`run_monitor.sh`](../../../run_monitor.sh) | Shell launcher executing `monitor_m2.py` inside `.venv` to prevent `ModuleNotFoundError: psutil`. |
 | **Hardware Monitor** | [`monitor_m2.py`](../../../monitor_m2.py) | Zero-sudo Curses monitor for CPU, RAM, and Apple Silicon `IOAccelerator` GPU % and allocated VRAM. |
-| **Multi-Agent Swarm** | [`swarm.py`](../../../swarm.py) | Sequential role handoff pipeline (Planner → Worker → Reviewer) sharing the LiteRT Metal model. *(WIP)* |
+| **Multi-Agent Swarm** | [`swarm.py`](../../../swarm.py) | Hybrid swarm (`HybridSwarm` with `agy` CLI + Gemma + Security Auditor) and local sequential swarm (`LocalSwarm`). |
+| **Fabric FAST Runner** | [`run_fast_swarm.py`](../../../run_fast_swarm.py) | Standalone runner for Cloud Foundation Fabric FAST landing zone generation and CIS audit. |
+| **GCP Use Cases** | [`use-cases.md`](../../../use-cases.md) | Documented production-grade GCP infrastructure engineering use cases and architecture patterns. |
 | **Diagnostic Test** | [`smoke.py`](../../../smoke.py) | Quick smoke test verifying LiteRT Metal GPU initialization, shader compilation, and basic tool inference. |
 | **Session Inspector** | [`view_history.py`](../../../view_history.py) | CLI utility to list sessions, view formatted Markdown transcripts, and prune past sessions. |
-| **Unit Tests** | [`tests/`](../../../tests) | Test suite covering session persistence, telemetry logging, thought streamer, and diff safety. |
+| **Unit Tests** | [`tests/`](../../../tests) | Test suite covering session persistence, telemetry logging, thought streamer, and swarm pipelines. |
 
 ## Quick Start & Operational Workflows
 
