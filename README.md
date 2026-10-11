@@ -100,23 +100,29 @@ All metrics are recorded as structured fields in `./sessions/<id>/events.jsonl` 
 
 ---
 
-## 🧠 Multi-Agent Swarm Pipeline (`swarm.py`)
+## 🧠 Multi-Agent Swarm Pipeline (`swarm.py` & `run_hybrid.py`)
 
-> [!WARNING]
-> **Work in Progress / Experimental**:
-> The sequential role handoff architecture is implemented in `swarm.py` and via `/swarm <task>`, but multi-turn automated evaluation benchmarks are under active development.
-
-Loading multiple 15 GB models simultaneously on a single Mac will trigger out-of-memory errors. The Swarm solves this by running specialized roles **sequentially** over the **same loaded model instance**:
+The repository supports two swarm execution topologies:
+1. **Hybrid Cloud + On-Device Swarm (`HybridSwarm`)**:
+   - **Cloud Gemini (Planner & Architect)**: Fast zero-shot reasoning via `google-genai` SDK (`gemini-2.5-flash` or `gemini-2.5-pro`) to emit high-level execution blueprints and HCL/YAML schemas.
+   - **On-Device Gemma 4 26B (Worker & Coder)**: 100% offline Metal GPU execution writing code, modifying files, and running commands on your Mac with zero cloud billing.
+   - **Automated Verification**: CLI verification (e.g. `terraform validate`, `pytest`) confirming correct implementation.
+2. **Local-Only Sequential Swarm (`LocalSwarm`)**:
+   - Executes specialized roles (Planner → Worker → Reviewer) sequentially over a single loaded Gemma 4 instance in Unified Memory without weight duplication.
 
 ```
-[User Objective] ──► [1. PLANNER] ──► [2. WORKER] ──► [3. REVIEWER]
-                       (Read-only       (Code edits       (Audits diffs
-                        Blueprint)       & commands)       & verifies)
+[User Objective] ──► [1. CLOUD GEMINI] ──► [2. LOCAL GEMMA 4] ──► [3. LOCAL VERIFIER]
+                        (Architecture        (On-device coding      (terraform validate,
+                         Blueprint)           via Metal tools)       linters & tests)
 ```
 
-Trigger a swarm task inside the TUI REPL:
-```text
-You [1] > /swarm Add unit tests for session_manager.py and verify coverage
+Trigger via TUI REPL or dedicated CLI runner:
+```bash
+# In-chat REPL
+You [1] > /hybrid Scaffold private Cloud Run v2 and Cloud SQL module
+
+# Direct standalone runner
+.venv/bin/python run_hybrid.py --objective "Scaffold private Cloud Run and Cloud SQL module"
 ```
 
 ---
@@ -126,14 +132,16 @@ You [1] > /swarm Add unit tests for session_manager.py and verify coverage
 | File | Purpose |
 | :--- | :--- |
 | **`harness_tui.py`** | Interactive REPL with `prompt_toolkit`, forward-only streaming, reasoning UI, safety gates, and slash commands. |
-| **`swarm.py`** | Sequential multi-agent pipeline (Planner → Worker → Reviewer) sharing the LiteRT Metal model. *(WIP)* |
+| **`swarm.py`** | Multi-agent pipelines: `HybridSwarm` (Cloud Gemini + Local Gemma) and `LocalSwarm` (sequential on-device). |
+| **`run_hybrid.py`** | Standalone CLI runner for the Hybrid Cloud + On-Device Swarm with real-time streaming and Terraform verification. |
+| **`use-cases.md`** | Detailed production-grade GCP/Infra use cases (IaC, GKE Hardening, FinOps, SRE Triage). |
 | **`session_manager.py`** | Session persistence engine handling atomic metadata, telemetry logging, `events.jsonl` audit trails, and transcripts. |
 | **`monitor_m2.py`** | Zero-sudo Curses monitor tracking Apple Silicon GPU utilization %, VRAM allocation, CPU, and RAM. |
 | **`run_monitor.sh`** | Safe shell launcher invoking `monitor_m2.py` inside the project virtual environment. |
 | **`view_history.py`** | CLI tool to inspect session tables, view formatted transcripts, and delete past sessions. |
 | **`smoke.py`** | Diagnostic script to verify LiteRT Metal GPU initialization and on-device inference. |
 | **`run_tui.sh`** | Shell launcher forwarding arguments to the virtual environment. |
-| **`tests/`** | Unit test suite covering session persistence, telemetry logging, thought streaming, and diff safety. |
+| **`tests/`** | 16-test unit suite covering session persistence, telemetry logging, thought streamer, and swarm pipelines. |
 
 ---
 
@@ -183,7 +191,8 @@ Run the diagnostic smoke test (compiles Metal GPU shaders on initial run):
 
 ## 💬 In-Chat Slash Commands
 
-* **`/swarm <task>`** — Run the sequential Planner → Worker → Reviewer pipeline *(WIP)*.
+* **`/hybrid <task>`** — Run the Hybrid Swarm (Cloud Gemini Planner + Local Gemma Worker + Verification).
+* **`/swarm <task>`** — Run the multi-agent swarm pipeline (auto-detects `GEMINI_API_KEY` for hybrid execution).
 * **`/sessions`** — List all saved sessions with index numbers, turns, and timestamps.
 * **`/delete <#>`** — Delete a past session from disk.
 * **`/rename <topic>`** — Rename the active session title.
