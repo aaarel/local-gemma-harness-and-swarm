@@ -1,0 +1,36 @@
+# Sample Development Workload: E-Commerce Storefront
+# Unhardened baseline running without resource limits, security contexts, or network isolation
+version: "3.8"
+
+services:
+  frontend:
+    image: nginx:alpine
+    container_name: web-frontend
+    ports:
+      - "80:80"
+    environment:
+      - BACKEND_URL=http://orders-api:8080
+      - ENVIRONMENT=development
+    restart: always
+
+  orders-api:
+    image: node:20-alpine
+    container_name: orders-api
+    command: ["node", "server.js"]
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_PASSWORD=insecure_plaintext_dev_password_123
+      - GCP_PROJECT_ID=my-dev-project
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-cache
+    ports:
+      - "6379:6379"
+    restart: always

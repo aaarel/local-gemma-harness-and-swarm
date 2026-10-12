@@ -1,0 +1,47 @@
+# Sample Unhardened Kubernetes Deployment
+# Violations:
+# - Runs as root (no runAsNonRoot, no drop capabilities)
+# - No memory or CPU requests/limits (vulnerable to node resource exhaustion)
+# - No liveness/readiness/startup probes
+# - No PodDisruptionBudget or HPA
+# - No NetworkPolicy (unrestricted cluster ingress/egress)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: default
+  labels:
+    app: orders-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders-api
+  template:
+    metadata:
+      labels:
+        app: orders-api
+    spec:
+      containers:
+        - name: orders-api
+          image: gcr.io/my-dev-project/orders-api:v1.0.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: DB_PASSWORD
+              value: "insecure_plaintext_dev_password_123"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-api
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: orders-api
+  ports:
+    - port: 8080
+      targetPort: 8080

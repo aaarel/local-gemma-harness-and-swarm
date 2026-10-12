@@ -12,6 +12,9 @@ from swarm import (
     WORKER_PROMPT,
     HYBRID_WORKER_PROMPT,
     SECURITY_AUDITOR_PROMPT,
+    GKE_PLANNER_PROMPT,
+    GKE_WORKER_PROMPT,
+    GKE_SECURITY_AUDITOR_PROMPT,
 )
 
 
@@ -67,8 +70,29 @@ def test_hybrid_swarm_configs_and_backends(tmp_path):
     assert reviewer_cfg.system_instructions.text == SECURITY_AUDITOR_PROMPT
 
 
+def test_hybrid_swarm_gke_prompts_and_overrides(tmp_path):
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+
+    swarm_gke = HybridSwarm(
+        model_path="/fake/path",
+        workspace_path=str(workspace),
+        cloud_backend="agy",
+        planner_prompt=GKE_PLANNER_PROMPT,
+        worker_prompt=GKE_WORKER_PROMPT,
+        auditor_prompt=GKE_SECURITY_AUDITOR_PROMPT,
+    )
+    assert swarm_gke.planner_prompt == GKE_PLANNER_PROMPT
+
+    worker_cfg = swarm_gke._create_worker_config()
+    assert worker_cfg.system_instructions.text == GKE_WORKER_PROMPT
+
+    reviewer_cfg = swarm_gke._create_reviewer_config()
+    assert reviewer_cfg.system_instructions.text == GKE_SECURITY_AUDITOR_PROMPT
+
+
 @pytest.mark.anyio
-async def test_hybrid_swarm_verification_no_tf(tmp_path):
+async def test_hybrid_swarm_verification_no_files(tmp_path):
     workspace = tmp_path / "empty_ws"
     workspace.mkdir()
 
@@ -78,11 +102,11 @@ async def test_hybrid_swarm_verification_no_tf(tmp_path):
         cloud_backend="agy",
     )
     result = await swarm.execute_verification()
-    assert "No .tf files detected" in result
+    assert "No .tf or .yaml files detected" in result
 
 
 @pytest.mark.anyio
-async def test_hybrid_swarm_verification_multi_stage(tmp_path):
+async def test_hybrid_swarm_verification_multi_stage_terraform(tmp_path):
     workspace = tmp_path / "fast_ws"
     workspace.mkdir()
 
@@ -115,3 +139,38 @@ terraform {
         assert "1-resman" in result
     else:
         assert "terraform binary not found" in result
+
+
+@pytest.mark.anyio
+async def test_hybrid_swarm_verification_kubernetes_yaml(tmp_path):
+    workspace = tmp_path / "k8s_ws"
+    workspace.mkdir()
+
+    # Create minimal valid kubernetes YAML manifest
+    (workspace / "deployment.yaml").write_text("""
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-app
+  template:
+    metadata:
+      labels:
+        app: test-app
+    spec:
+      containers:
+        - name: app
+          image: nginx:latest
+""")
+
+    swarm = HybridSwarm(
+        model_path="/fake/path",
+        workspace_path=str(workspace),
+        cloud_backend="agy",
+    )
+    result = await swarm.execute_verification()
+    assert "YAML manifests are syntactically valid" in result

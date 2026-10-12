@@ -132,7 +132,9 @@ You [1] > /hybrid Scaffold private Cloud Run v2 and Cloud SQL module
 | File | Purpose |
 | :--- | :--- |
 | **`Option A: Production-Grade GCP Terraform Module Scaffolding & Validation/`** | Subfolder housing the Fabric FAST landing zone and Terraform scaffolding implementations (`run_fast_swarm.py`, `run_hybrid.py`, `README.md`). |
+| **`Option B: Kubernetes & GKE Production Hardening & Kustomize Migration/`** | Subfolder housing GKE production hardening, Kustomize overlay generation, and security auditing (`run_gke_swarm.py`, `README.md`, `input_workload/`). |
 | **`run_fast_swarm.py`** | Root launcher delegating to the Option A subfolder for Fabric FAST landing zone generation and CIS audit. |
+| **`run_gke_swarm.py`** | Root launcher delegating to the Option B subfolder for GKE hardening and Kustomize generation. |
 | **`run_hybrid.py`** | Root launcher delegating to the Option A subfolder for Private Cloud Run + Cloud SQL module generation. |
 | **`use-cases.md`** | Detailed production-grade GCP/Infra use cases (Fabric FAST Landing Zone, GKE Hardening, FinOps, SRE Triage). |
 | **`harness_tui.py`** | Interactive REPL with `prompt_toolkit`, forward-only streaming, reasoning UI, safety gates, and slash commands. |
@@ -143,7 +145,7 @@ You [1] > /hybrid Scaffold private Cloud Run v2 and Cloud SQL module
 | **`view_history.py`** | CLI tool to inspect session tables, view formatted transcripts, and delete past sessions. |
 | **`smoke.py`** | Diagnostic script to verify LiteRT Metal GPU initialization and on-device inference. |
 | **`run_tui.sh`** | Shell launcher forwarding arguments to the virtual environment. |
-| **`tests/`** | 16-test unit suite covering session persistence, telemetry logging, thought streamer, and swarm pipelines. |
+| **`tests/`** | 18-test unit suite covering session persistence, telemetry logging, thought streamer, and swarm pipelines. |
 
 ---
 

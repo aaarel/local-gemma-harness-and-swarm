@@ -27,11 +27,13 @@ This skill encapsulates the exact architecture, scripts, operational workflows, 
 | **Hardware Monitor** | [`monitor_m2.py`](../../../monitor_m2.py) | Zero-sudo Curses monitor for CPU, RAM, and Apple Silicon `IOAccelerator` GPU % and allocated VRAM. |
 | **Multi-Agent Swarm** | [`swarm.py`](../../../swarm.py) | Hybrid swarm (`HybridSwarm` with `agy` CLI + Gemma + Security Auditor) and local sequential swarm (`LocalSwarm`). |
 | **Option A Subfolder** | [`Option A: Production-Grade GCP Terraform Module Scaffolding & Validation/`](<../../../Option A: Production-Grade GCP Terraform Module Scaffolding & Validation>) | Dedicated subfolder containing Fabric FAST landing zone and Terraform scaffolding implementations (`run_fast_swarm.py`, `run_hybrid.py`, `README.md`). |
+| **Option B Subfolder** | [`Option B: Kubernetes & GKE Production Hardening & Kustomize Migration/`](<../../../Option B: Kubernetes & GKE Production Hardening & Kustomize Migration>) | Dedicated subfolder containing GKE production hardening, Kustomize overlay generation, and security auditing (`run_gke_swarm.py`, `README.md`, `input_workload/`). |
 | **Fabric FAST Runner** | [`run_fast_swarm.py`](../../../run_fast_swarm.py) | Root launcher forwarding to Option A subfolder for Fabric FAST landing zone generation and CIS audit. |
+| **GKE Swarm Runner** | [`run_gke_swarm.py`](../../../run_gke_swarm.py) | Root launcher forwarding to Option B subfolder for GKE hardening and Kustomize generation. |
 | **GCP Use Cases** | [`use-cases.md`](../../../use-cases.md) | Documented production-grade GCP infrastructure engineering use cases and architecture patterns. |
 | **Diagnostic Test** | [`smoke.py`](../../../smoke.py) | Quick smoke test verifying LiteRT Metal GPU initialization, shader compilation, and basic tool inference. |
 | **Session Inspector** | [`view_history.py`](../../../view_history.py) | CLI utility to list sessions, view formatted Markdown transcripts, and prune past sessions. |
-| **Unit Tests** | [`tests/`](../../../tests) | Test suite covering session persistence, telemetry logging, thought streamer, and swarm pipelines. |
+| **Unit Tests** | [`tests/`](../../../tests) | Test suite (18 unit tests) covering session persistence, telemetry logging, thought streamer, and swarm pipelines. |
 
 ## Quick Start & Operational Workflows
 

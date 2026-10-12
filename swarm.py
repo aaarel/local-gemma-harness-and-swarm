@@ -101,6 +101,67 @@ Output an Audit Report formatted as:
 - Medium / Low Recommendations:
 - Final Verification Verdict:"""
 
+# =====================================================================
+# GKE Production Hardening & Kustomize Prompts (Option B)
+# =====================================================================
+
+GKE_PLANNER_PROMPT = """You are a GOOGLE CLOUD GKE PLATFORM ARCHITECT & KUBERNETES SECURITY SPECIALIST.
+Your partner is an on-device AI coding agent (Gemma 4 running locally on Apple Silicon Metal) equipped with file authoring and shell tools.
+
+Your task is to analyze an unhardened development workload (e.g. docker-compose.yaml or raw Kubernetes deployment) and emit a structured, production-grade Kustomize Architecture Blueprint adhering to Google Cloud's GKE Security Best Practices.
+
+Strict guidelines for your plan:
+1. KUSTOMIZE DIRECTORY LAYOUT:
+   - base/
+     - deployment.yaml (hardened workload with securityContext, resource requests/limits, probes)
+     - service.yaml (ClusterIP / internal routing)
+     - configmap.yaml & secret-generator (externalized environment configurations)
+     - hpa.yaml (HorizontalPodAutoscaler autoscaling/v2 targeting 70% CPU / 80% Memory)
+     - pdb.yaml (PodDisruptionBudget policy/v1 minAvailable: 1)
+     - networkpolicy.yaml (strict default-deny ingress/egress with explicit allow rules)
+     - kustomization.yaml
+   - overlays/dev/
+     - kustomization.yaml (scaled replicas: 1, relaxed resource requests)
+   - overlays/prod/
+     - kustomization.yaml (scaled replicas: 3, HA multi-zone anti-affinity, production environment variables)
+   - RUNBOOK.md (Cluster deployment guide, namespace creation, kubectl kustomize commands, and verification)
+2. SECURITY CONTROLS (CIS GKE Benchmark & PSS Restricted):
+   - Enforce Pod Security Standards: restricted.
+   - securityContext: runAsNonRoot: true, runAsUser: 10001, readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: drop: ["ALL"], seccompProfile: type: RuntimeDefault.
+   - Workload Identity Federation: Annotate Kubernetes ServiceAccount with `iam.gke.io/gcp-service-account: <gsa-email>`.
+   - Healthchecks: explicit livenessProbe, readinessProbe, and startupProbe.
+   - Explicit CPU and Memory requests & limits on every container.
+
+Be precise, structured, and authoritative. Emit the complete file-by-file blueprint."""
+
+GKE_WORKER_PROMPT = """You are the ON-DEVICE KUBERNETES IMPLEMENTATION WORKER in a hybrid AI engineering swarm.
+You run 100% locally on Apple Silicon Metal with full access to Antigravity tools (write_to_file, replace_file_content, run_command, view_file).
+
+Your task:
+1. Review the unhardened workload in the input directory and the Kustomize Blueprint from the Cloud Architect.
+2. Generate the complete multi-tier Kustomize structure (base/, overlays/dev/, overlays/prod/) in the target workspace using `write_to_file`.
+3. Author a comprehensive operational `RUNBOOK.md` detailing prerequisites, namespace setup, Workload Identity configuration, deployment commands (`kubectl apply -k overlays/prod`), and rollback procedures.
+4. Ensure every YAML manifest is 100% valid, syntactically correct, and follows Kubernetes 1.30+ API standards.
+5. Report a clean summary of files created and verification outcomes."""
+
+GKE_SECURITY_AUDITOR_PROMPT = """You are the INDEPENDENT KUBERNETES & GKE SECURITY AUDITOR.
+You are running in a fresh, isolated evaluation session. Your job is to critically review the generated Kustomize Kubernetes manifests and RUNBOOK.md in the target workspace.
+
+Evaluate against CIS Google Kubernetes Engine (GKE) Benchmark v1.4 & Pod Security Standards (Restricted):
+1. Pod Security: runAsNonRoot is true, readOnlyRootFilesystem is true, allowPrivilegeEscalation is false, drop ["ALL"] capabilities, seccomp RuntimeDefault.
+2. Resource Governance: All containers define CPU/memory requests and limits. HPA and PodDisruptionBudget are configured.
+3. Network Segmentation: NetworkPolicy enforces least-privilege traffic flow.
+4. Workload Identity: GSA annotation present on ServiceAccount; no static GCP service account keys in secrets.
+5. Healthchecks: Liveness, readiness, and startup probes properly configured.
+6. RUNBOOK.md: Step-by-step clarity, rollback instructions, and kubectl commands.
+
+Output an Audit Report formatted as:
+### 🛡️ GKE Security & Compliance Audit Report
+- Status: [PASS] or [REVISION NEEDED]
+- Critical / High Findings (if any with exact remediation diffs):
+- Medium / Low Recommendations:
+- Final Verification Verdict:"""
+
 
 class LocalSwarm:
     """
@@ -186,12 +247,18 @@ class HybridSwarm:
         cloud_backend: str = "agy",
         gemini_api_key: Optional[str] = None,
         gemini_model: Optional[str] = None,
+        planner_prompt: Optional[str] = None,
+        worker_prompt: Optional[str] = None,
+        auditor_prompt: Optional[str] = None,
         session: Optional[Session] = None,
     ):
         self.model_path = model_path
         self.workspace_path = workspace_path
         self.gemini_api_key = gemini_api_key or os.environ.get("GEMINI_API_KEY")
         self.gemini_model = gemini_model or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        self.planner_prompt = planner_prompt or HYBRID_PLANNER_PROMPT
+        self.worker_prompt = worker_prompt or HYBRID_WORKER_PROMPT
+        self.auditor_prompt = auditor_prompt or SECURITY_AUDITOR_PROMPT
         self.session = session
 
         # Automatically select agy CLI backend if available and no API key explicitly provided
@@ -205,7 +272,7 @@ class HybridSwarm:
             model_path=self.model_path,
             workspaces=[self.workspace_path],
             policies=[policy.allow_all()],
-            system_instructions=types.CustomSystemInstructions(text=HYBRID_WORKER_PROMPT),
+            system_instructions=types.CustomSystemInstructions(text=self.worker_prompt),
             save_dir=str(self.session.conversation_dir) if self.session else None,
             app_data_dir=str(self.session.app_data_dir) if self.session else None,
         )
@@ -215,7 +282,7 @@ class HybridSwarm:
             model_path=self.model_path,
             workspaces=[self.workspace_path],
             policies=[policy.allow(types.BuiltinTools.VIEW_FILE)],
-            system_instructions=types.CustomSystemInstructions(text=SECURITY_AUDITOR_PROMPT),
+            system_instructions=types.CustomSystemInstructions(text=self.auditor_prompt),
             conversation_id=f"{self.session.session_id}_sec" if self.session else None,
             save_dir=str(self.session.conversation_dir) if self.session else None,
             app_data_dir=str(self.session.app_data_dir) if self.session else None,
@@ -229,7 +296,7 @@ class HybridSwarm:
         if not os.path.exists(agy_bin):
             raise FileNotFoundError(f"Antigravity CLI (agy) not found at: {agy_bin}")
 
-        prompt = f"{HYBRID_PLANNER_PROMPT}\n\nObjective:\n{objective}"
+        prompt = f"{self.planner_prompt}\n\nObjective:\n{objective}"
         proc = await asyncio.create_subprocess_exec(
             agy_bin, "--print", prompt,
             stdout=asyncio.subprocess.PIPE,
@@ -264,7 +331,7 @@ class HybridSwarm:
             model=self.gemini_model,
             contents=prompt,
             config=genai_types.GenerateContentConfig(
-                system_instruction=HYBRID_PLANNER_PROMPT,
+                system_instruction=self.planner_prompt,
                 temperature=0.2,
             )
         )
@@ -285,45 +352,86 @@ class HybridSwarm:
 
     async def execute_verification(self) -> str:
         """
-        Runs local verification checks (e.g., terraform validate if .tf files exist across stages).
+        Runs local verification checks:
+        - Terraform validate if .tf files exist
+        - YAML syntax and Kustomize build if .yaml/.yml manifests exist
         """
         results = []
-        terraform_bin = shutil.which("terraform") or shutil.which("tofu")
         
-        if not terraform_bin:
-            return "⚠️ terraform binary not found in PATH; skipping CLI validation."
+        # 1. Terraform Verification
+        has_tf_files = any(f.endswith(".tf") for _, _, files in os.walk(self.workspace_path) for f in files)
+        if has_tf_files:
+            terraform_bin = shutil.which("terraform") or shutil.which("tofu")
+            if terraform_bin:
+                stage_dirs = []
+                for root, dirs, files in os.walk(self.workspace_path):
+                    if any(f.endswith(".tf") for f in files):
+                        stage_dirs.append(root)
 
-        stage_dirs = []
-        for root, dirs, files in os.walk(self.workspace_path):
-            if any(f.endswith(".tf") for f in files):
-                stage_dirs.append(root)
+                results.append(f"🔍 Running Terraform validation using: {terraform_bin}...")
+                for stage_dir in sorted(stage_dirs):
+                    rel_dir = os.path.relpath(stage_dir, self.workspace_path)
+                    init_proc = await asyncio.create_subprocess_exec(
+                        terraform_bin, f"-chdir={stage_dir}", "init", "-backend=false",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    await init_proc.communicate()
 
-        if not stage_dirs:
-            return "ℹ️ No .tf files detected in workspace for Terraform validation."
-
-        results.append(f"🔍 Running Terraform validation using: {terraform_bin}...")
-        for stage_dir in sorted(stage_dirs):
-            rel_dir = os.path.relpath(stage_dir, self.workspace_path)
-            # 1. init
-            init_proc = await asyncio.create_subprocess_exec(
-                terraform_bin, f"-chdir={stage_dir}", "init", "-backend=false",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await init_proc.communicate()
-
-            # 2. validate
-            val_proc = await asyncio.create_subprocess_exec(
-                terraform_bin, f"-chdir={stage_dir}", "validate",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await val_proc.communicate()
-            val_out = stdout.decode("utf-8") + stderr.decode("utf-8")
-            if val_proc.returncode == 0:
-                results.append(f"  ✓ [{rel_dir}] validate passed!")
+                    val_proc = await asyncio.create_subprocess_exec(
+                        terraform_bin, f"-chdir={stage_dir}", "validate",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, stderr = await val_proc.communicate()
+                    val_out = stdout.decode("utf-8") + stderr.decode("utf-8")
+                    if val_proc.returncode == 0:
+                        results.append(f"  ✓ [{rel_dir}] validate passed!")
+                    else:
+                        results.append(f"  ⚠️ [{rel_dir}] issues:\n{val_out.strip()}")
             else:
-                results.append(f"  ⚠️ [{rel_dir}] issues:\n{val_out.strip()}")
+                results.append("⚠️ terraform binary not found in PATH; skipping Terraform CLI validation.")
+
+        # 2. Kubernetes YAML / Kustomize Verification
+        yaml_files = []
+        for root, dirs, files in os.walk(self.workspace_path):
+            for f in files:
+                if f.endswith((".yaml", ".yml")):
+                    yaml_files.append(os.path.join(root, f))
+
+        if yaml_files:
+            try:
+                import yaml
+                yaml_errors = []
+                for yf in yaml_files:
+                    try:
+                        with open(yf, "r", encoding="utf-8") as yf_in:
+                            list(yaml.safe_load_all(yf_in))
+                    except Exception as ye:
+                        yaml_errors.append(f"  ❌ [{os.path.relpath(yf, self.workspace_path)}] syntax error: {ye}")
+
+                if yaml_errors:
+                    results.append("⚠️ YAML syntax issues detected:\n" + "\n".join(yaml_errors))
+                else:
+                    results.append(f"✓ All {len(yaml_files)} Kubernetes YAML manifests are syntactically valid.")
+            except ImportError:
+                results.append("ℹ️ PyYAML not installed; skipped YAML syntax check.")
+
+            kustomize_bin = shutil.which("kustomize") or shutil.which("kubectl")
+            if kustomize_bin:
+                kust_dirs = [os.path.dirname(yf) for yf in yaml_files if os.path.basename(yf) in ("kustomization.yaml", "kustomization.yml")]
+                for kd in kust_dirs:
+                    rel_kd = os.path.relpath(kd, self.workspace_path)
+                    cmd = [kustomize_bin, "build", kd] if "kustomize" in kustomize_bin else [kustomize_bin, "kustomize", kd]
+                    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                    stdout, stderr = await proc.communicate()
+                    if proc.returncode == 0:
+                        results.append(f"  ✓ kustomize build [{rel_kd}] passed.")
+                    else:
+                        results.append(f"  ⚠️ kustomize build [{rel_kd}]: {stderr.decode()[:150]}")
+
+        if not has_tf_files and not yaml_files:
+            return "ℹ️ No .tf or .yaml files detected in workspace for validation."
 
         return "\n".join(results)
 
