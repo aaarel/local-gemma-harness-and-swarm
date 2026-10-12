@@ -131,10 +131,12 @@ You [1] > /hybrid Scaffold private Cloud Run v2 and Cloud SQL module
 
 | File | Purpose |
 | :--- | :--- |
+| **`Option A: Production-Grade GCP Terraform Module Scaffolding & Validation/`** | Subfolder housing the Fabric FAST landing zone and Terraform scaffolding implementations (`run_fast_swarm.py`, `run_hybrid.py`, `README.md`). |
+| **`run_fast_swarm.py`** | Root launcher delegating to the Option A subfolder for Fabric FAST landing zone generation and CIS audit. |
+| **`run_hybrid.py`** | Root launcher delegating to the Option A subfolder for Private Cloud Run + Cloud SQL module generation. |
+| **`use-cases.md`** | Detailed production-grade GCP/Infra use cases (Fabric FAST Landing Zone, GKE Hardening, FinOps, SRE Triage). |
 | **`harness_tui.py`** | Interactive REPL with `prompt_toolkit`, forward-only streaming, reasoning UI, safety gates, and slash commands. |
-| **`swarm.py`** | Multi-agent pipelines: `HybridSwarm` (Cloud Gemini + Local Gemma) and `LocalSwarm` (sequential on-device). |
-| **`run_hybrid.py`** | Standalone CLI runner for the Hybrid Cloud + On-Device Swarm with real-time streaming and Terraform verification. |
-| **`use-cases.md`** | Detailed production-grade GCP/Infra use cases (IaC, GKE Hardening, FinOps, SRE Triage). |
+| **`swarm.py`** | Multi-agent pipelines: `HybridSwarm` (Cloud Gemini via `agy` + Local Gemma) and `LocalSwarm` (sequential on-device). |
 | **`session_manager.py`** | Session persistence engine handling atomic metadata, telemetry logging, `events.jsonl` audit trails, and transcripts. |
 | **`monitor_m2.py`** | Zero-sudo Curses monitor tracking Apple Silicon GPU utilization %, VRAM allocation, CPU, and RAM. |
 | **`run_monitor.sh`** | Safe shell launcher invoking `monitor_m2.py` inside the project virtual environment. |

@@ -26,7 +26,8 @@ This skill encapsulates the exact architecture, scripts, operational workflows, 
 | **Monitor Launcher** | [`run_monitor.sh`](../../../run_monitor.sh) | Shell launcher executing `monitor_m2.py` inside `.venv` to prevent `ModuleNotFoundError: psutil`. |
 | **Hardware Monitor** | [`monitor_m2.py`](../../../monitor_m2.py) | Zero-sudo Curses monitor for CPU, RAM, and Apple Silicon `IOAccelerator` GPU % and allocated VRAM. |
 | **Multi-Agent Swarm** | [`swarm.py`](../../../swarm.py) | Hybrid swarm (`HybridSwarm` with `agy` CLI + Gemma + Security Auditor) and local sequential swarm (`LocalSwarm`). |
-| **Fabric FAST Runner** | [`run_fast_swarm.py`](../../../run_fast_swarm.py) | Standalone runner for Cloud Foundation Fabric FAST landing zone generation and CIS audit. |
+| **Option A Subfolder** | [`Option A: Production-Grade GCP Terraform Module Scaffolding & Validation/`](<../../../Option A: Production-Grade GCP Terraform Module Scaffolding & Validation>) | Dedicated subfolder containing Fabric FAST landing zone and Terraform scaffolding implementations (`run_fast_swarm.py`, `run_hybrid.py`, `README.md`). |
+| **Fabric FAST Runner** | [`run_fast_swarm.py`](../../../run_fast_swarm.py) | Root launcher forwarding to Option A subfolder for Fabric FAST landing zone generation and CIS audit. |
 | **GCP Use Cases** | [`use-cases.md`](../../../use-cases.md) | Documented production-grade GCP infrastructure engineering use cases and architecture patterns. |
 | **Diagnostic Test** | [`smoke.py`](../../../smoke.py) | Quick smoke test verifying LiteRT Metal GPU initialization, shader compilation, and basic tool inference. |
 | **Session Inspector** | [`view_history.py`](../../../view_history.py) | CLI utility to list sessions, view formatted Markdown transcripts, and prune past sessions. |
