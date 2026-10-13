@@ -1,0 +1,22 @@
+# Deliberately broken: shows what fast_validate.py catches (not from FAST).
+ingress:
+  ingress-prod-allow-iap-admin:
+    description: "Admin access"
+    priority: 1000
+    source_ranges:
+      - 0.0.0.0/0
+    rules:
+      - protocol: tcp
+        ports: ["22", "3389"]
+  ingress-prod-allow-healthchecks:
+    description: "Health checks"
+    priority: 1001
+    allow:
+      - protocol: tcp
+        ports: [80, 443]
+    target_tags: ["web"]
+  ingress-prod-allow-web-to-app:
+    description: "web to app"
+    priority: 1002
+    sources: ["web"]
+    targets: ["app"]

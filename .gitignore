@@ -28,8 +28,9 @@ sessions/
 *.credentials
 *.cert
 
-# Generated workspaces and test artifacts
+# Generated workspaces, logs and test artifacts
 workspaces/
+logs/
 
 # Antigravity & IDE generated
 .gemini/

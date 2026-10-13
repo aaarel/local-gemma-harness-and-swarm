@@ -1,0 +1,32 @@
+ingress:
+  ingress-prod-allow-iap-admin:
+    description: "Allow SSH and RDP from IAP TCP forwarding only."
+    priority: 1000
+    source_ranges:
+      - 35.235.240.0/20
+    rules:
+      - protocol: tcp
+        ports: ["22", "3389"]
+    enable_logging:
+      include_metadata: true
+  ingress-prod-allow-healthchecks:
+    description: "Allow Google health checks to the web tier."
+    priority: 1001
+    source_ranges:
+      - 35.191.0.0/16
+      - 130.211.0.0/22
+    targets:
+      - web
+    rules:
+      - protocol: tcp
+        ports: ["80", "443"]
+  ingress-prod-allow-web-to-app:
+    description: "Allow the web tier to reach the app tier on 8080."
+    priority: 1002
+    sources:
+      - web
+    targets:
+      - app
+    rules:
+      - protocol: tcp
+        ports: ["8080"]
