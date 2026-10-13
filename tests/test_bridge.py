@@ -172,3 +172,30 @@ def test_fake_replies_file(tmp_path):
     f = tmp_path / "replies.txt"
     f.write_text(f"first\n{gemma_server.FAKE_REPLY_SEPARATOR}\nsecond\n")
     assert gemma_server.read_fake_replies(str(f)) == ["first", "second"]
+
+
+def test_build_sampling():
+    # Empty body
+    assert gemma_server.build_sampling({}) is None
+
+    # Explicit seed
+    s = gemma_server.build_sampling({"temperature": 0.8, "seed": 42})
+    assert s == {"temperature": 0.8, "seed": 42, "top_k": 40}
+
+    # Temperature > 0 with no seed generates random seed and default top_k=40
+    s2 = gemma_server.build_sampling({"temperature": 0.7})
+    assert s2["temperature"] == 0.7
+    assert s2["top_k"] == 40
+    assert isinstance(s2["seed"], int) and s2["seed"] > 0
+
+    # Temperature 0 doesn't invent seed
+    s3 = gemma_server.build_sampling({"temperature": 0.0})
+    assert s3 == {"temperature": 0.0}
+
+
+def test_chat_passes_sampling(ready_server):
+    server, url = ready_server
+    res = gemma_bridge.chat([{"role": "user", "content": "hi"}], url=url, temperature=0.5, seed=123)
+    assert server.backend.last_sampling == {"temperature": 0.5, "seed": 123, "top_k": 40}
+    assert res["timing"]["seed"] == 123
+    assert res["timing"]["temperature"] == 0.5

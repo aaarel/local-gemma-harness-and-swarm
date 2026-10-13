@@ -143,12 +143,17 @@ def ensure_running(url: str = DEFAULT_URL, model: Optional[str] = None, backend:
 
 
 def chat(messages: List[Dict[str, str]], *, url: str = DEFAULT_URL, max_tokens: int = 2048,
-         thinking: bool = False, temperature: Optional[float] = None,
+         thinking: bool = False, temperature: Optional[float] = None, seed: Optional[int] = None,
+         top_k: Optional[int] = None, top_p: Optional[float] = None,
          on_delta: Optional[Callable[[str, str], None]] = None, timeout: float = 900.0) -> Dict[str, Any]:
-    """Streams one chat completion. Returns {"content", "reasoning", "timing"}."""
+    """Streams one chat completion. Returns {"content", "reasoning", "timing"}.
+
+    With temperature > 0 and no seed, the server picks a random seed (see timing["seed"]).
+    """
     body: Dict[str, Any] = {"messages": messages, "stream": True, "max_tokens": max_tokens, "thinking": thinking}
-    if temperature is not None:
-        body["temperature"] = temperature
+    for key, value in (("temperature", temperature), ("seed", seed), ("top_k", top_k), ("top_p", top_p)):
+        if value is not None:
+            body[key] = value
     content: List[str] = []
     reasoning: List[str] = []
     timing: Dict[str, Any] = {}
@@ -247,7 +252,8 @@ def _cmd_ask(args: argparse.Namespace) -> int:
                 sys.stdout.flush()
 
         result = chat(messages, url=args.url, max_tokens=args.max_tokens, thinking=args.think,
-                      temperature=args.temperature, on_delta=on_delta if streaming else None)
+                      temperature=args.temperature, seed=args.seed,
+                      on_delta=on_delta if streaming else None)
     except (BridgeError, OSError) as e:
         print(f"✗ {e}", file=sys.stderr)
         return 1
@@ -306,6 +312,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             sp.add_argument("--show-thinking", action="store_true", help="Print the thinking text too")
             sp.add_argument("--max-tokens", type=int, default=2048)
             sp.add_argument("--temperature", type=float, default=None)
+            sp.add_argument("--seed", type=int, default=None, help="Sampling seed for reproducibility")
             sp.add_argument("--no-start", action="store_true", help="Fail instead of starting the server")
             sp.add_argument("--json", action="store_true", help="Print the full result as JSON")
     sub.add_parser("stop", help="Stop the server")

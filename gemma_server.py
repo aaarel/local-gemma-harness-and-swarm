@@ -14,7 +14,9 @@ Endpoints:
   GET  /v1/models            OpenAI-style model list
   POST /v1/chat/completions  OpenAI-style chat, streaming or not.
                              Extra request field: "thinking": true|false (default false).
-                             Extra response field: "x_timing" (queue, TTFT, totals, chunks).
+                             Sampling: "temperature", "top_k", "top_p", "seed". With
+                             temperature > 0 and no seed, a random seed is used.
+                             Extra response field: "x_timing" (queue, TTFT, totals, chunks, seed).
                              One chunk is roughly one token in LiteRT-LM 0.17.
   POST /shutdown             Stop the server.
   GET  /                     Minimal chat page (disable with --no-ui).
@@ -31,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import re
 import signal
 import sys
@@ -97,6 +100,27 @@ def normalize_messages(raw: Any) -> List[Dict[str, str]]:
     return out
 
 
+def build_sampling(body: Dict[str, Any], rng: Optional[random.Random] = None) -> Optional[Dict[str, Any]]:
+    """Reads temperature / seed / top_k / top_p from a request body for LiteRT's SamplerConfig.
+
+    LiteRT-LM uses a fixed seed when none is given, so temperature alone gives the
+    same text on every call. When temperature > 0 and the caller didn't send a seed,
+    pick a random one. The seed is reported in x_timing so a run can be replayed.
+    Returns None when nothing is set (LiteRT defaults).
+    """
+    sampling: Dict[str, Any] = {}
+    for key, cast in (("temperature", float), ("top_p", float), ("top_k", int), ("seed", int)):
+        value = body.get(key)
+        if value is not None:
+            sampling[key] = cast(value)
+    if sampling.get("temperature", 0.0) > 0:
+        if "top_k" not in sampling and "top_p" not in sampling:
+            sampling["top_k"] = 40
+        if "seed" not in sampling:
+            sampling["seed"] = (rng or random).randrange(1, 2**31 - 1)
+    return sampling or None
+
+
 def _split_chunk(chunk: Any) -> Iterator[Event]:
     """Turns one LiteRT-LM stream chunk into (kind, text) events.
 
@@ -161,7 +185,7 @@ class LiteRTBackend:
         return lm.Message.model(contents=contents)
 
     def stream(self, messages: List[Dict[str, str]], max_output_tokens: int, thinking: bool,
-               thinking_budget: int, temperature: Optional[float]) -> Iterator[Event]:
+               thinking_budget: int, sampling: Optional[Dict[str, Any]]) -> Iterator[Event]:
         lm = self.lm
         converted = [self._message(m) for m in messages]
         context, prompt = converted[:-1], converted[-1]
@@ -169,7 +193,8 @@ class LiteRTBackend:
             thinking_config = lm.ThinkingConfig(enable_thinking=True, thinking_token_budget=thinking_budget)
         else:
             thinking_config = lm.ThinkingConfig(enable_thinking=False)
-        sampler = lm.SamplerConfig(temperature=temperature) if temperature is not None else None
+        # Only pass the keys that were set; LiteRT keeps its own defaults for the rest.
+        sampler = lm.SamplerConfig(**sampling) if sampling else None
         with self._ctx.create_conversation(
             messages=context,
             automatic_tool_calling=False,
@@ -196,10 +221,12 @@ class FakeBackend:
         self.replies = list(replies or [])
         self.delay = delay
         self.calls = 0
+        self.last_sampling: Optional[Dict[str, Any]] = None
 
     def stream(self, messages: List[Dict[str, str]], max_output_tokens: int, thinking: bool,
-               thinking_budget: int, temperature: Optional[float]) -> Iterator[Event]:
+               thinking_budget: int, sampling: Optional[Dict[str, Any]]) -> Iterator[Event]:
         self.calls += 1
+        self.last_sampling = sampling
         if thinking:
             yield ("reasoning", "Thinking about the request... ")
         if self.replies:
@@ -293,7 +320,7 @@ class GemmaServer(ThreadingHTTPServer):
 
     # -- generation ----------------------------------------------------------
     def generate(self, messages: List[Dict[str, str]], max_tokens: int, thinking: bool,
-                 temperature: Optional[float]) -> Iterator[Event]:
+                 sampling: Optional[Dict[str, Any]] = None) -> Iterator[Event]:
         """Yields events; the final timing dict is stored in self.last_timing."""
         received = time.time()
         with self.state_lock:
@@ -304,7 +331,7 @@ class GemmaServer(ThreadingHTTPServer):
                 start = time.time()
                 first = first_content = None
                 n_reasoning = n_content = 0
-                for kind, text in self.backend.stream(messages, max_tokens, thinking, self.thinking_budget, temperature):
+                for kind, text in self.backend.stream(messages, max_tokens, thinking, self.thinking_budget, sampling):
                     now = time.time()
                     if first is None:
                         first = now
@@ -328,6 +355,8 @@ class GemmaServer(ThreadingHTTPServer):
                 "chunks": chunks,
                 "chunks_per_s": round(chunks / decode_s, 1) if chunks else 0.0,
                 "thinking": thinking,
+                "temperature": (sampling or {}).get("temperature"),
+                "seed": (sampling or {}).get("seed"),
             }
         finally:
             with self.state_lock:
@@ -416,9 +445,12 @@ class GemmaHandler(BaseHTTPRequestHandler):
         thinking = bool(body.get("thinking", False))
         if str(body.get("reasoning_effort", "")).lower() in ("low", "medium", "high"):
             thinking = True
-        temperature = body.get("temperature")
-        temperature = float(temperature) if temperature is not None else None
-        events = self.server.generate(messages, max_tokens, thinking, temperature)
+        try:
+            sampling = build_sampling(body)
+        except (TypeError, ValueError) as e:
+            self._error(400, f"bad request: {e}")
+            return
+        events = self.server.generate(messages, max_tokens, thinking, sampling)
         try:
             if body.get("stream"):
                 self._stream(events)

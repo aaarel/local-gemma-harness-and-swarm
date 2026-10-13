@@ -81,8 +81,9 @@ def run_once(run_dir: str, args: argparse.Namespace) -> Dict[str, Any]:
     ok = False
     for n in range(1, args.max_attempts + 1):
         print(f"  attempt {n}: Gemma is writing {TARGET_FILE} ...", flush=True)
+        seed = (args.seed + n - 1) if getattr(args, "seed", None) is not None else None
         result = gemma_bridge.chat(messages, url=args.url, max_tokens=args.max_tokens, thinking=args.think,
-                                   temperature=args.temperature)
+                                   temperature=args.temperature, seed=seed)
         final_yaml = extract_yaml(result["content"])
         check = validate_firewall_rules(final_yaml)
         with open(os.path.join(run_dir, f"attempt-{n}.yaml"), "w", encoding="utf-8") as f:
@@ -122,6 +123,7 @@ def main(argv: List[str] | None = None) -> int:
     p.add_argument("--think", action="store_true", help="Let Gemma think before answering (slower)")
     p.add_argument("--max-tokens", type=int, default=2048)
     p.add_argument("--temperature", type=float, default=None)
+    p.add_argument("--seed", type=int, default=None, help="Base random seed (offset per run)")
     p.add_argument("--out-dir", default=os.path.join(HERE, "workspaces", "fast-slice"))
     p.add_argument("--url", default=gemma_bridge.DEFAULT_URL)
     p.add_argument("--no-start", action="store_true", help="Fail instead of starting the server")
