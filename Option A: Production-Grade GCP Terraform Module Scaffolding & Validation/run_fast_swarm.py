@@ -29,8 +29,8 @@ from session_manager import SessionManager
 from swarm import HybridSwarm
 
 DEFAULT_OBJECTIVE = (
-    "Plan and generate an off-the-shelf, production-grade Google Cloud Foundation Fabric FAST "
-    "landing zone for a small customer (Acme Corp, domain: acme-corp.com, prefix: fast, region: europe-west1). "
+    "Plan and generate a small landing-zone scaffold modeled on the classic Google Cloud Foundation "
+    "Fabric FAST stage layout (plain Terraform, not the FAST modules) for a small customer (Acme Corp, domain: acme-corp.com, prefix: fast, region: europe-west1). "
     "Required deliverables: "
     "1. 0-bootstrap stage: Automation project, Terraform state GCS bucket (uniform access, versioning), CI/CD SAs, billing alert budget, org audit log sink. "
     "2. 1-resman stage: Resource hierarchy ('Platform' and 'Workloads' folders), essential CIS GCP Org Policies (disable default VPC, disable external SA keys, enforce uniform bucket access), and group IAM bindings. "
@@ -87,13 +87,13 @@ async def main():
     os.makedirs(workspace_path, exist_ok=True)
     session_mgr = SessionManager(workspace_path)
     session = session_mgr.create_session(
-        title="Fabric FAST Landing Zone (Small Customer)",
+        title="FAST-inspired landing-zone scaffold (small customer)",
         model="hybrid-gemini-gemma-fast",
     )
 
     banner = (
         f"[bold cyan]Use Case:[/bold cyan] Option A — Production-Grade GCP Terraform Module Scaffolding\n"
-        f"[bold cyan]Architecture:[/bold cyan] Google Cloud Foundation Fabric FAST (Small Customer)\n"
+        f"[bold cyan]Architecture:[/bold cyan] Landing-zone scaffold modeled on the classic FAST layout (plain Terraform)\n"
         f"[bold cyan]Cloud Planner:[/bold cyan] Gemini via Antigravity CLI ([bold green]No API Key Needed[/bold green])\n"
         f"[bold cyan]Local Worker:[/bold cyan] Gemma 4 26B on Apple Silicon Metal GPU\n"
         f"[bold cyan]Security Auditor:[/bold cyan] Gemma 4 26B (Fresh Context, CIS GCP Benchmark v3.0 Level 1)\n"

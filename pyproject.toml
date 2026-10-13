@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "local-gemma-harness-and-swarm"
 version = "0.2.0"
-description = "100% offline agentic coding harness and multi-agent swarm for Gemma 4 on Apple Silicon via LiteRT and Antigravity"
+description = "Agentic coding harness, local Gemma server and multi-agent swarm for Gemma 4 on Apple Silicon (on-device inference via LiteRT)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -24,7 +24,7 @@ dependencies = [
 gemma-harness = "harness_tui:main"
 
 [tool.setuptools]
-py-modules = ["harness_tui", "session_manager", "monitor_m2", "view_history", "swarm"]
+py-modules = ["harness_tui", "session_manager", "monitor_m2", "view_history", "swarm", "gemma_server", "gemma_bridge", "fast_validate", "fast_slice"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

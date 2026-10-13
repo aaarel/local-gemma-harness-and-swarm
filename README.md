@@ -1,6 +1,9 @@
 # Local Gemma 4 Agent Harness & Multi-Agent Swarm
 
-A 100% offline, tool-augmented terminal agent and multi-agent development environment for **Gemma 4 26B** on **Apple Silicon (M2/M3/M4)**. Powered by **Google AI Edge LiteRT (`litert-lm`)** with Metal GPU acceleration and the **Google Antigravity SDK**.
+A tool-augmented terminal agent and multi-agent development environment for **Gemma 4 26B** on **Apple Silicon (M2/M3/M4)**. Inference runs on-device with **Google AI Edge LiteRT (`litert-lm`)** and Metal GPU acceleration; the agent loop uses the **Google Antigravity SDK**.
+
+> [!NOTE]
+> **On-device inference isn't the same as offline.** The hybrid swarm calls Gemini in the cloud, `terraform init` downloads providers, and the Antigravity SDK path may reach for the network at startup. Test with Wi-Fi off before relying on it. The local Gemma server (`gemma_server.py`) talks to LiteRT-LM directly, without the SDK. The swarms are experimental.
 
 ---
 
@@ -14,7 +17,7 @@ A 100% offline, tool-augmented terminal agent and multi-agent development enviro
 
 Most local LLM tools (like Ollama or LM Studio) are designed primarily for conversational chat or HTTP APIs. They lack built-in **agentic coding primitives**—native tools for inspecting files, applying targeted code edits, executing shell commands, and sandboxing workspaces.
 
-This harness turns a local Gemma checkpoint into a capable, on-device software engineer that reads, edits, and verifies code directly in your local repositories with zero cloud API keys, zero telemetry, and zero token bills.
+This harness turns a local Gemma checkpoint into a capable, on-device software engineer that reads, edits, and verifies code directly in your local repositories with no cloud API keys and no token bills.
 
 ---
 
@@ -22,10 +25,11 @@ This harness turns a local Gemma checkpoint into a capable, on-device software e
 
 | Capability | What It Does |
 | :--- | :--- |
-| **100% On-Device Metal Inference** | Runs Gemma 4 26B A4B (~14.7 GiB) directly in Unified Memory with zero external network calls. |
+| **On-Device Metal Inference** | Runs Gemma 4 26B A4B (~14.7 GiB) directly in Unified Memory; prompts and outputs stay on the machine. |
+| **Local Gemma Server (AGY bridge)** | `gemma_server.py`: OpenAI-compatible API with `/health` on 127.0.0.1:8765, used by the `local-gemma-bridge` skill so AGY can hand tasks to local Gemma. |
 | **Live Chain-of-Thought Reasoning** | Streams step-by-step thinking in a dedicated UI box (`┌── 💭 Thinking Process ──`), tracking thought duration and tokens (`Thought for 9s, 537 tokens`). |
 | **Real-Time Turn Telemetry** | Per-turn metrics in the footer: Time to First Token (TTFT), decode speed (`⚡ tok/s`), tokens produced, and live Apple Silicon VRAM/GPU%. |
-| **Agentic Coding Primitives** | Equipped with native tools: `view_file`, `write_to_file`, `replace_file_content`, and `run_command`. |
+| **Agentic Coding Primitives** | Equipped with native tools: `view_file`, `create_file`, `edit_file`, and `run_command`. |
 | **Visual Diff Confirmation** | Colorized unified diff preview on file modifications before prompting for user confirmation. |
 | **Interactive Safety & YOLO Mode** | Safe by default: write and shell actions require confirmation (`[y/N/a]`). Pass `--yolo` for autonomous workflows. |
 | **Workspace Sandboxing** | Target specific directories with `--workspace <path>`, preventing accidental edits to the harness codebase. |
@@ -40,6 +44,9 @@ This harness turns a local Gemma checkpoint into a capable, on-device software e
 ---
 
 ## 📊 Performance & Hardware Metrics
+
+> [!NOTE]
+> These numbers predate the telemetry footer. Re-measure them with the footer, `events.jsonl` or `logs/gemma_requests.jsonl` before quoting.
 
 Tested on Apple Silicon (**M2 Pro, 32 GB Unified Memory**) running **Gemma 4 26B A4B**:
 
@@ -105,7 +112,7 @@ All metrics are recorded as structured fields in `./sessions/<id>/events.jsonl` 
 The repository supports two swarm execution topologies:
 1. **Hybrid Cloud + On-Device Swarm (`HybridSwarm`)**:
    - **Cloud Gemini (Planner & Architect)**: Fast zero-shot reasoning via `google-genai` SDK (`gemini-2.5-flash` or `gemini-2.5-pro`) to emit high-level execution blueprints and HCL/YAML schemas.
-   - **On-Device Gemma 4 26B (Worker & Coder)**: 100% offline Metal GPU execution writing code, modifying files, and running commands on your Mac with zero cloud billing.
+   - **On-Device Gemma 4 26B (Worker & Coder)**: on-device Metal GPU execution that writes and edits files on your Mac (file tools only, no shell) with zero cloud billing.
    - **Automated Verification**: CLI verification (e.g. `terraform validate`, `pytest`) confirming correct implementation.
 2. **Local-Only Sequential Swarm (`LocalSwarm`)**:
    - Executes specialized roles (Planner → Worker → Reviewer) sequentially over a single loaded Gemma 4 instance in Unified Memory without weight duplication.
@@ -127,6 +134,38 @@ You [1] > /hybrid Scaffold private Cloud Run v2 and Cloud SQL module
 
 ---
 
+## 🌉 Local Gemma Server & AGY Bridge (`gemma_server.py`, `gemma_bridge.py`)
+
+AGY can't select a local model. `gemma_server.py` keeps Gemma loaded and serves an OpenAI-compatible API on
+`127.0.0.1:8765`, talking to LiteRT-LM directly (no Antigravity SDK, no Go harness). The
+`local-gemma-bridge` skill (`.agents/skills/local-gemma-bridge/`) teaches AGY to check its health, start it and
+send it tasks.
+
+```bash
+python3 gemma_bridge.py start          # start in the background, wait for /health = ready
+python3 gemma_bridge.py status         # health JSON (exit 0 = ready)
+python3 gemma_bridge.py ask "Explain what this allows" --file rules.yaml
+python3 gemma_bridge.py ask "Review it" --file main.tf --out review.md   # answer stays in a local file
+python3 gemma_bridge.py stop
+curl -s 127.0.0.1:8765/health | python3 -m json.tool
+```
+
+Requests can set `"thinking": true`. Responses include `x_timing` (TTFT, totals, chunks/s), and a minimal chat
+page is served at http://127.0.0.1:8765/.
+
+## 🧱 FAST v59 Slice Demo (`fast_slice.py`, `fast_validate.py`)
+
+Local Gemma writes one real Cloud Foundation Fabric FAST file: the prod spoke VPC firewall rules for the v59
+`2-networking` stage. A deterministic validator checks it against FAST's own JSON schema (copied in `fast_v59/`)
+and the security requirements (admin ports only from IAP, health-check ranges, tag-based east-west).
+On failure Gemma gets the errors and retries.
+
+```bash
+python3 fast_slice.py                                # one run
+python3 fast_slice.py --runs 5 --temperature 0.8     # scorecard
+python3 fast_validate.py fast_v59/bad-example.yaml   # what the validator catches
+```
+
 ## 📁 Repository Overview
 
 | File | Purpose |
@@ -145,6 +184,9 @@ You [1] > /hybrid Scaffold private Cloud Run v2 and Cloud SQL module
 | **`view_history.py`** | CLI tool to inspect session tables, view formatted transcripts, and delete past sessions. |
 | **`smoke.py`** | Diagnostic script to verify LiteRT Metal GPU initialization and on-device inference. |
 | **`run_tui.sh`** | Shell launcher forwarding arguments to the virtual environment. |
+| **`gemma_server.py`** | Persistent local Gemma server: OpenAI-compatible API, `/health`, one generation at a time, chat page at `/`. |
+| **`gemma_bridge.py`** | Stdlib-only client: `status`, `start`, `ask`, `stop`. Used by the AGY skill and `fast_slice.py`. |
+| **`fast_slice.py`** / **`fast_validate.py`** | FAST v59 firewall-rules demo and its validator (FAST JSON schema + security checks). |
 | **`tests/`** | 18-test unit suite covering session persistence, telemetry logging, thought streamer, and swarm pipelines. |
 
 ---
@@ -226,9 +268,9 @@ Tests validate:
 
 ## 🔒 Privacy & Security
 
-- **100% Offline**: No network requests or telemetry. Model weights run directly on Apple Silicon Metal.
+- **On-device inference**: Model weights run directly on Apple Silicon Metal; prompts and outputs stay local. Hybrid mode calls Gemini in the cloud; check the SDK path's offline behavior with Wi-Fi off.
 - **Isolated Sessions**: Conversation histories are kept in `./sessions/` and are ignored by `.gitignore`.
-- **Command Guardrails**: Modifying tools (`run_command`, `write_to_file`, `replace_file_content`) require manual user confirmation by default.
+- **Command Guardrails**: In the TUI, modifying tools (`run_command`, `create_file`, `edit_file`) require manual user confirmation by default. Swarm workers get file tools only (no `run_command`).
 
 ---
 

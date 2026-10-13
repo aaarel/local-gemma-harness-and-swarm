@@ -106,6 +106,15 @@ async def main():
         cloud_backend=args.cloud_backend,
         gemini_model=args.gemini_model,
         session=session,
+        title="Private Cloud Run + Cloud SQL module",
+        worker_task=(
+            "Write the Terraform module files (versions.tf, variables.tf, main.tf, iam.tf, outputs.tf) "
+            "in the target workspace now."
+        ),
+        audit_task=(
+            "Review the generated Terraform module for security issues: private IP only, SSL required, "
+            "least-privilege service account, internal ingress and VPC egress."
+        ),
     )
 
     t_start = time.time()

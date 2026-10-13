@@ -28,7 +28,7 @@ from monitor_m2 import get_gpu_metrics
 DEFAULT_MODEL_PATH = os.path.expanduser("~/.litert-lm/models/gemma4-26b/model.litertlm")
 console = Console()
 
-DEFAULT_SYSTEM_INSTRUCTIONS = """You are Gemma, an expert autonomous software engineer and coding assistant running 100% locally on Apple Silicon via Google AI Edge LiteRT.
+DEFAULT_SYSTEM_INSTRUCTIONS = """You are Gemma, an expert autonomous software engineer and coding assistant running locally on Apple Silicon via Google AI Edge LiteRT.
 
 CORE OPERATIONAL GUIDELINES:
 
@@ -39,7 +39,7 @@ CORE OPERATIONAL GUIDELINES:
    - Close the </thought> block before delivering your final answer to the user or executing actions.
 
 2. TOOL USAGE & EXECUTION CONSTRAINTS:
-   - Only call tools (run_command, view_file, write_to_file, replace_file_content) when explicitly needed to inspect/edit files or run terminal commands.
+   - Only call tools (run_command, view_file, create_file, edit_file) when explicitly needed to inspect/edit files or run terminal commands.
    - If the user asks a general knowledge or explanation question, answer directly in text without calling tools.
    - If the user explicitly instructs "do not execute", "dry run", or "review only", NEVER invoke execution or modification tools.
    - Before modifying or editing an existing file, always inspect it first using view_file.
@@ -470,7 +470,7 @@ async def main():
         f"[bold cyan]Safety Mode:[/bold cyan] {mode_badge}\n"
         f"[bold cyan]Workspace:[/bold cyan] {workspace_path}\n"
         f"[bold cyan]Model:[/bold cyan] {model_path}\n"
-        f"[bold cyan]Engine:[/bold cyan] LiteRT on Apple Silicon Metal GPU ([bold green]100% Offline[/bold green])\n"
+        f"[bold cyan]Engine:[/bold cyan] LiteRT on Apple Silicon Metal GPU ([bold green]on-device inference[/bold green])\n"
         f"[bold cyan]Commands:[/bold cyan] [bold yellow]/sessions[/bold yellow] | [bold yellow]/swarm <task>[/bold yellow] | [bold yellow]/hybrid <task>[/bold yellow] | [bold yellow]/delete <#>[/bold yellow] | [bold yellow]/rename <name>[/bold yellow] | [bold yellow]/info[/bold yellow] | [bold yellow]/clear[/bold yellow] | [bold yellow]/exit[/bold yellow]"
     )
     console.print(Panel(banner_text, title="[bold yellow]Gemma 4 Local Agent (Antigravity + LiteRT)[/bold yellow]", border_style="yellow"))

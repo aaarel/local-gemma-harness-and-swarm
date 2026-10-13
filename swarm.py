@@ -1,8 +1,11 @@
 import asyncio
 import os
+import re
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Optional, List, Dict, Any, AsyncGenerator, Tuple
 
@@ -20,7 +23,7 @@ except ImportError:
     HAS_GENAI = False
 
 from google.antigravity import Agent, LiteRTAgentConfig, types
-from google.antigravity.hooks import policy
+from google.antigravity.hooks import hooks, policy
 
 from session_manager import Session
 
@@ -56,7 +59,8 @@ Your job is to critically review the Worker's implementation against the origina
 HYBRID_PLANNER_PROMPT = """You are a GOOGLE CLOUD PROFESSIONAL SERVICES (PSO) LEAD ARCHITECT specializing in Cloud Foundation Fabric FAST.
 Your partner is an on-device AI coding agent (Gemma 4 running locally on Apple Silicon Metal) equipped with file authoring and shell tools.
 
-Your task is to analyze the user's infrastructure objective and emit a structured, production-grade Execution Blueprint for an off-the-shelf Google Cloud Foundation Fabric FAST landing zone for a small customer.
+Your task is to analyze the user's infrastructure objective and emit a structured Execution Blueprint for a small landing-zone scaffold modeled on the classic Cloud Foundation Fabric FAST stage layout.
+Note: this scaffold is plain Terraform written from scratch, not the FAST modules. (Current FAST, v59, uses 0-org-setup, 1-vpcsc, 2-networking, 2-project-factory and YAML factories.)
 
 Strict guidelines for your plan:
 1. FABRIC FAST STAGE ARCHITECTURE:
@@ -71,18 +75,19 @@ Strict guidelines for your plan:
 4. CIS GCP BENCHMARK GUARDRAILS:
    Enforce CIS GCP v3.0 Level 1 controls (no default VPC, no external SA keys, uniform bucket access, private Google access).
 
-Be precise, structured, and authoritative. Do not ask questions; emit the complete execution blueprint."""
+Be precise, structured, and authoritative. Do not ask questions; emit the complete execution blueprint.
+Respond with text only: do not call tools, create or edit files, or run commands."""
 
 HYBRID_WORKER_PROMPT = """You are the ON-DEVICE IMPLEMENTATION WORKER in a hybrid AI software engineering swarm.
-You run 100% locally on Apple Silicon Metal with full access to Antigravity tools (write_to_file, replace_file_content, run_command, view_file).
+You run on-device on Apple Silicon Metal with file tools only (create_file, edit_file, view_file).
 
 Your task:
 1. Review the Execution Blueprint provided by the Cloud Architect (Gemini).
-2. Execute the plan by creating all required stage files in the target workspace using `write_to_file`.
-3. Scaffold the complete Cloud Foundation Fabric FAST stages (0-bootstrap, 1-resman, 2-networking, 3-project-factory) with complete, syntactically valid Terraform code and sample .tfvars.
-4. Author a comprehensive, production-ready `RUNBOOK.md` with complete operational instructions for the cloud engineer.
-5. Execute verification commands using `run_command` (e.g. `terraform validate`).
-6. Report a clean summary of files created and verification outcomes."""
+2. Execute the plan by creating all required stage files in the target workspace using `create_file`.
+3. Scaffold the landing-zone stages (0-bootstrap, 1-resman, 2-networking, 3-project-factory) with complete, syntactically valid Terraform code and sample .tfvars.
+4. Author a comprehensive `RUNBOOK.md` with complete operational instructions for the cloud engineer.
+5. Do not run commands: the harness runs `terraform validate` after you finish.
+6. Report a clean summary of the files you created."""
 
 SECURITY_AUDITOR_PROMPT = """You are the INDEPENDENT CLOUD SECURITY AUDITOR & CIS BENCHMARK REVIEWER.
 You are running in a fresh, isolated evaluation session. Your job is to critically review the Terraform infrastructure files and RUNBOOK.md in the target workspace.
@@ -96,7 +101,7 @@ Evaluate against CIS Google Cloud Platform Foundation Benchmark v3.0 (Level 1) &
 
 Output an Audit Report formatted as:
 ### 🛡️ Security & Compliance Audit Report
-- Status: [PASS] or [REVISION NEEDED]
+- Status: PASS or REVISION NEEDED (write exactly one)
 - Critical / High Findings (if any with exact remediation diffs):
 - Medium / Low Recommendations:
 - Final Verification Verdict:"""
@@ -135,14 +140,15 @@ Strict guidelines for your plan:
 Be precise, structured, and authoritative. Emit the complete file-by-file blueprint."""
 
 GKE_WORKER_PROMPT = """You are the ON-DEVICE KUBERNETES IMPLEMENTATION WORKER in a hybrid AI engineering swarm.
-You run 100% locally on Apple Silicon Metal with full access to Antigravity tools (write_to_file, replace_file_content, run_command, view_file).
+You run on-device on Apple Silicon Metal with file tools only (create_file, edit_file, view_file).
 
 Your task:
 1. Review the unhardened workload in the input directory and the Kustomize Blueprint from the Cloud Architect.
-2. Generate the complete multi-tier Kustomize structure (base/, overlays/dev/, overlays/prod/) in the target workspace using `write_to_file`.
+2. Generate the complete multi-tier Kustomize structure (base/, overlays/dev/, overlays/prod/) in the target workspace using `create_file`.
 3. Author a comprehensive operational `RUNBOOK.md` detailing prerequisites, namespace setup, Workload Identity configuration, deployment commands (`kubectl apply -k overlays/prod`), and rollback procedures.
 4. Ensure every YAML manifest is 100% valid, syntactically correct, and follows Kubernetes 1.30+ API standards.
-5. Report a clean summary of files created and verification outcomes."""
+5. Do not run commands: the harness validates the YAML and runs kustomize build after you finish.
+6. Report a clean summary of the files you created."""
 
 GKE_SECURITY_AUDITOR_PROMPT = """You are the INDEPENDENT KUBERNETES & GKE SECURITY AUDITOR.
 You are running in a fresh, isolated evaluation session. Your job is to critically review the generated Kustomize Kubernetes manifests and RUNBOOK.md in the target workspace.
@@ -157,10 +163,68 @@ Evaluate against CIS Google Kubernetes Engine (GKE) Benchmark v1.4 & Pod Securit
 
 Output an Audit Report formatted as:
 ### 🛡️ GKE Security & Compliance Audit Report
-- Status: [PASS] or [REVISION NEEDED]
+- Status: PASS or REVISION NEEDED (write exactly one)
 - Critical / High Findings (if any with exact remediation diffs):
 - Medium / Low Recommendations:
 - Final Verification Verdict:"""
+
+# Default per-use-case instructions (the runners override these).
+FAST_WORKER_TASK = (
+    "Scaffold the complete landing zone (0-bootstrap, 1-resman, 2-networking, 3-project-factory) "
+    "and write RUNBOOK.md now."
+)
+FAST_AUDIT_TASK = (
+    "Review the generated landing-zone stages and RUNBOOK.md against CIS GCP Benchmark v3.0 Level 1."
+)
+
+AGY_TEXT_ONLY = (
+    "\n\nIMPORTANT: Respond with text only. Do not call any tools, do not create or edit files, "
+    "and do not run commands. Print the complete blueprint as your answer."
+)
+
+WORKER_TOOLS = [types.BuiltinTools.VIEW_FILE, types.BuiltinTools.CREATE_FILE, types.BuiltinTools.EDIT_FILE]
+REVIEWER_TOOLS = [types.BuiltinTools.VIEW_FILE]
+
+
+def audit_requests_revision(audit_text: str) -> bool:
+    """True if the auditor's verdict asks for a revision.
+
+    Reads the "Status:" line instead of searching the whole text, so "no revision
+    needed" or an echoed "PASS or REVISION NEEDED" template line don't count.
+    """
+    for line in audit_text.splitlines():
+        m = re.search(r"status\W{0,3}\s*[:\-]\s*(.+)", line, flags=re.IGNORECASE)
+        if not m:
+            continue
+        value = m.group(1).upper()
+        has_pass = re.search(r"\bPASS(ED)?\b", value) is not None
+        has_revision = "REVISION NEEDED" in value and not re.search(r"\bNO\s+REVISION", value)
+        if has_pass and not has_revision:
+            return False
+        if has_revision and not has_pass:
+            return True
+    upper = audit_text.upper()
+    return "[REVISION NEEDED]" in upper and "[PASS]" not in upper
+
+
+def _list_workspace_files(workspace: str, limit: int = 200) -> List[str]:
+    files = []
+    for root, dirs, names in os.walk(workspace):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for name in sorted(names):
+            if not name.startswith("."):
+                files.append(os.path.join(root, name))
+    return sorted(files)[:limit]
+
+
+def _kill_process_group(proc: "asyncio.subprocess.Process") -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
 
 
 class LocalSwarm:
@@ -251,6 +315,10 @@ class HybridSwarm:
         worker_prompt: Optional[str] = None,
         auditor_prompt: Optional[str] = None,
         session: Optional[Session] = None,
+        worker_task: Optional[str] = None,
+        audit_task: Optional[str] = None,
+        title: str = "Landing-zone scaffold (FAST-inspired)",
+        agy_timeout: Optional[float] = None,
     ):
         self.model_path = model_path
         self.workspace_path = workspace_path
@@ -259,19 +327,40 @@ class HybridSwarm:
         self.planner_prompt = planner_prompt or HYBRID_PLANNER_PROMPT
         self.worker_prompt = worker_prompt or HYBRID_WORKER_PROMPT
         self.auditor_prompt = auditor_prompt or SECURITY_AUDITOR_PROMPT
+        self.worker_task = worker_task or FAST_WORKER_TASK
+        self.audit_task = audit_task or FAST_AUDIT_TASK
+        self.title = title
+        self.agy_timeout = float(agy_timeout or os.environ.get("AGY_PLAN_TIMEOUT", "300"))
         self.session = session
+        self.tool_call_times: List[float] = []
 
-        # Automatically select agy CLI backend if available and no API key explicitly provided
-        if cloud_backend == "agy" or (not self.gemini_api_key and shutil.which("agy")):
+        # Explicit choice wins; otherwise prefer agy when it's installed and there's no API key.
+        if cloud_backend in ("agy", "genai"):
+            self.cloud_backend = cloud_backend
+        elif not self.gemini_api_key and shutil.which("agy"):
             self.cloud_backend = "agy"
         else:
             self.cloud_backend = "genai"
 
+    def _tool_timing_hooks(self) -> list:
+        """Records when each tool call finishes, to show how the time between calls grows."""
+        times = self.tool_call_times
+
+        @hooks.post_tool_call
+        async def _record_tool_call(data):
+            times.append(time.time())
+
+        return [_record_tool_call]
+
     def _create_worker_config(self) -> LiteRTAgentConfig:
+        # File tools only: no run_command, so Gemma can't run shell commands on this machine.
+        # Verification runs in Stage 5, outside the model.
         return LiteRTAgentConfig(
             model_path=self.model_path,
             workspaces=[self.workspace_path],
+            capabilities=types.CapabilitiesConfig(enabled_tools=WORKER_TOOLS),
             policies=[policy.allow_all()],
+            hooks=self._tool_timing_hooks(),
             system_instructions=types.CustomSystemInstructions(text=self.worker_prompt),
             save_dir=str(self.session.conversation_dir) if self.session else None,
             app_data_dir=str(self.session.app_data_dir) if self.session else None,
@@ -281,6 +370,7 @@ class HybridSwarm:
         return LiteRTAgentConfig(
             model_path=self.model_path,
             workspaces=[self.workspace_path],
+            capabilities=types.CapabilitiesConfig(enabled_tools=REVIEWER_TOOLS),
             policies=[policy.allow(types.BuiltinTools.VIEW_FILE)],
             system_instructions=types.CustomSystemInstructions(text=self.auditor_prompt),
             conversation_id=f"{self.session.session_id}_sec" if self.session else None,
@@ -291,28 +381,50 @@ class HybridSwarm:
     async def _execute_cloud_plan_via_agy(self, objective: str) -> AsyncGenerator[str, None]:
         """
         Streams architectural plan using the local Antigravity CLI (agy) without requiring an API key.
+
+        Runs `agy --print` from an empty temp dir, asks for text only, and enforces our own
+        timeout: headless agy ignores permissions.allow, and a tool-approval prompt stalls
+        forever, even past --print-timeout (b/539480364).
         """
         agy_bin = shutil.which("agy") or os.path.expanduser("~/.local/bin/agy")
         if not os.path.exists(agy_bin):
             raise FileNotFoundError(f"Antigravity CLI (agy) not found at: {agy_bin}")
 
-        prompt = f"{self.planner_prompt}\n\nObjective:\n{objective}"
+        prompt = f"{self.planner_prompt}\n\nObjective:\n{objective}{AGY_TEXT_ONLY}"
+        workdir = tempfile.mkdtemp(prefix="agy-plan-")  # nothing for agy to read or edit
         proc = await asyncio.create_subprocess_exec(
             agy_bin, "--print", prompt,
+            cwd=workdir,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,  # so a timeout can kill agy and its children
         )
-
-        while True:
-            line = await proc.stdout.readline()
-            if not line:
-                break
-            yield line.decode("utf-8")
-
-        await proc.wait()
+        stderr_task = asyncio.ensure_future(proc.stderr.read())
+        deadline = time.monotonic() + self.agy_timeout
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError()
+                line = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
+                if not line:
+                    break
+                yield line.decode("utf-8", errors="replace")
+            await asyncio.wait_for(proc.wait(), timeout=max(1.0, deadline - time.monotonic()))
+        except asyncio.TimeoutError:
+            _kill_process_group(proc)
+            raise RuntimeError(
+                f"agy --print did not finish within {self.agy_timeout:.0f}s and was stopped. Headless agy "
+                "can stall on a tool approval (b/539480364). Try --cloud-backend genai or set AGY_PLAN_TIMEOUT."
+            )
+        finally:
+            if proc.returncode is None:
+                _kill_process_group(proc)
+            shutil.rmtree(workdir, ignore_errors=True)
+        stderr = (await stderr_task).decode("utf-8", errors="replace")
         if proc.returncode != 0:
-            stderr = await proc.stderr.read()
-            raise RuntimeError(f"agy CLI failed with code {proc.returncode}: {stderr.decode('utf-8')}")
+            raise RuntimeError(f"agy CLI failed with code {proc.returncode}: {stderr[-2000:]}")
 
     async def _execute_cloud_plan_via_genai(self, objective: str) -> AsyncGenerator[str, None]:
         """
@@ -350,6 +462,18 @@ class HybridSwarm:
             async for chunk in self._execute_cloud_plan_via_genai(objective):
                 yield chunk
 
+    @staticmethod
+    async def _run_tool(cmd: List[str], env: Optional[Dict[str, str]] = None, timeout: float = 300.0) -> Tuple[int, str]:
+        """Runs a CLI tool with a timeout; returns (exit code, combined output)."""
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return 124, f"timed out after {timeout:.0f}s: {' '.join(cmd)}"
+        return proc.returncode, out.decode("utf-8", errors="replace")
+
     async def execute_verification(self) -> str:
         """
         Runs local verification checks:
@@ -368,24 +492,24 @@ class HybridSwarm:
                     if any(f.endswith(".tf") for f in files):
                         stage_dirs.append(root)
 
+                # Share downloaded providers between stages and runs. The first `init` still
+                # needs the network (registry download); later ones reuse the cache.
+                tf_env = dict(os.environ)
+                plugin_cache = tf_env.setdefault(
+                    "TF_PLUGIN_CACHE_DIR", os.path.expanduser("~/.terraform.d/plugin-cache"))
+                os.makedirs(plugin_cache, exist_ok=True)
+                tf_env.setdefault("TF_IN_AUTOMATION", "1")
+
                 results.append(f"🔍 Running Terraform validation using: {terraform_bin}...")
                 for stage_dir in sorted(stage_dirs):
                     rel_dir = os.path.relpath(stage_dir, self.workspace_path)
-                    init_proc = await asyncio.create_subprocess_exec(
-                        terraform_bin, f"-chdir={stage_dir}", "init", "-backend=false",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    await init_proc.communicate()
-
-                    val_proc = await asyncio.create_subprocess_exec(
-                        terraform_bin, f"-chdir={stage_dir}", "validate",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    stdout, stderr = await val_proc.communicate()
-                    val_out = stdout.decode("utf-8") + stderr.decode("utf-8")
-                    if val_proc.returncode == 0:
+                    init_rc, init_out = await self._run_tool(
+                        [terraform_bin, f"-chdir={stage_dir}", "init", "-backend=false", "-input=false"], tf_env)
+                    if init_rc != 0:
+                        results.append(f"  ⚠️ [{rel_dir}] terraform init failed:\n{init_out.strip()[-1500:]}")
+                        continue
+                    val_rc, val_out = await self._run_tool([terraform_bin, f"-chdir={stage_dir}", "validate"], tf_env)
+                    if val_rc == 0:
                         results.append(f"  ✓ [{rel_dir}] validate passed!")
                     else:
                         results.append(f"  ⚠️ [{rel_dir}] issues:\n{val_out.strip()}")
@@ -479,7 +603,7 @@ class HybridSwarm:
                 f"User Objective:\n{objective}\n\n"
                 f"Execution Blueprint from Cloud Architect:\n{plan_text}\n\n"
                 f"Target Workspace: {self.workspace_path}\n\n"
-                f"Scaffold the complete Cloud Foundation Fabric FAST landing zone and write RUNBOOK.md now."
+                f"{self.worker_task}"
             )
             resp = await worker.chat(worker_prompt)
             async for token in resp:
@@ -489,6 +613,7 @@ class HybridSwarm:
         worker_duration = time.time() - worker_start
         worker_text = "".join(worker_tokens)
         yield ("WORKER", f"\n[dim]✓ Local Worker completed in {worker_duration:.1f}s[/dim]\n")
+        yield ("WORKER", self._tool_timing_summary(worker_start))
 
         # -------------------------------------------------------------
         # Stage 3: Independent Security Audit (Isolated Context)
@@ -499,10 +624,13 @@ class HybridSwarm:
         reviewer_config = self._create_reviewer_config()
 
         async with Agent(reviewer_config) as auditor:
+            # The auditor only has view_file, so give it the file list (fresh context, no listing tool).
+            files = _list_workspace_files(self.workspace_path)
+            file_list = "\n".join(f"- {f}" for f in files) or "- (no files were created)"
             audit_prompt = (
-                f"Inspect all files in workspace {self.workspace_path}.\n"
-                f"Review the generated Cloud Foundation Fabric FAST stages and RUNBOOK.md against CIS GCP Benchmark v3.0 Level 1.\n"
-                "Deliver your security audit report with [PASS] or [REVISION NEEDED]."
+                f"Files in workspace {self.workspace_path} (open each with view_file):\n{file_list}\n\n"
+                f"{self.audit_task}\n"
+                "Deliver your security audit report. Its Status line must say exactly PASS or REVISION NEEDED."
             )
             resp = await auditor.chat(audit_prompt)
             async for token in resp:
@@ -516,14 +644,14 @@ class HybridSwarm:
         # -------------------------------------------------------------
         # Stage 4: Remediation Pass (If Reviewer requested fixes)
         # -------------------------------------------------------------
-        if "REVISION NEEDED" in audit_text.upper():
+        if audit_requests_revision(audit_text):
             yield ("WORKER", f"\n[bold yellow]═══ Stage 4: Applying Security Reviewer Fixes ═══[/bold yellow]\n")
             fix_tokens = []
             async with Agent(self._create_worker_config()) as fixer:
                 fix_prompt = (
                     f"The Security Auditor reported these findings:\n{audit_text}\n\n"
                     f"Target Workspace: {self.workspace_path}\n\n"
-                    "Please inspect the files and apply the necessary fixes using replace_file_content or write_to_file."
+                    "Please inspect the files and apply the necessary fixes using edit_file or create_file."
                 )
                 resp = await fixer.chat(fix_prompt)
                 async for token in resp:
@@ -541,7 +669,7 @@ class HybridSwarm:
         # Session Logging
         if self.session:
             summary = (
-                f"### Fabric FAST Swarm Objective: {objective}\n\n"
+                f"### {self.title} Swarm Objective: {objective}\n\n"
                 f"**Planner**: Cloud Gemini ({backend_label}, {plan_duration:.1f}s)\n"
                 f"**Worker**: Local Gemma 4 26B ({worker_duration:.1f}s)\n"
                 f"**Security Auditor**: Local Gemma 4 26B ({sec_duration:.1f}s)\n\n"
@@ -550,4 +678,14 @@ class HybridSwarm:
                 f"#### Security Audit Verdict:\n{audit_text}\n\n"
                 f"#### Verification Results:\n```\n{verification_output}\n```\n"
             )
-            self.session.append_turn(f"/fast {objective}", summary)
+            self.session.append_turn(f"/hybrid {objective}", summary)
+
+    def _tool_timing_summary(self, stage_start: float) -> str:
+        """One line on how long Gemma took between tool calls (it re-reads the growing history each time)."""
+        times = [t for t in self.tool_call_times if t >= stage_start]
+        if not times:
+            return "[dim]Tool calls: 0[/dim]\n"
+        gaps = [round(b - a, 1) for a, b in zip([stage_start] + times[:-1], times)]
+        middle = sorted(gaps)[len(gaps) // 2]
+        return (f"[dim]Tool calls: {len(times)} | time per call: first {gaps[0]}s, last {gaps[-1]}s, "
+                f"median {middle}s | all: {gaps}[/dim]\n")

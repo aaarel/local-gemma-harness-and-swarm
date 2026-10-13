@@ -149,6 +149,9 @@ async def main():
         worker_prompt=GKE_WORKER_PROMPT,
         auditor_prompt=GKE_SECURITY_AUDITOR_PROMPT,
         session=session,
+        title="GKE hardening (Kustomize)",
+        worker_task="Generate the complete Kustomize structure (base/, overlays/dev/, overlays/prod/) and RUNBOOK.md now.",
+        audit_task="Review the generated Kustomize manifests and RUNBOOK.md against the CIS GKE Benchmark and Pod Security Standards (Restricted).",
     )
 
     t_start = time.time()

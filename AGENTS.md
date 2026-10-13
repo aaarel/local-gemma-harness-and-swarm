@@ -3,7 +3,8 @@
 ## Hardware & Runtime Architecture
 - **Hardware**: Apple M2 Pro (Apple Silicon ARM64), 32 GB Unified Memory.
 - **Model**: Gemma 4 26B A4B (`~/.litert-lm/models/gemma4-26b/model.litertlm`, ~14.7 GiB).
-- **Inference Runtime**: Google AI Edge LiteRT (`litert-lm`), Metal GPU backend (100% offline, zero cloud calls).
+- **Inference Runtime**: Google AI Edge LiteRT (`litert-lm`), Metal GPU backend (on-device inference; check offline behavior with Wi-Fi off before relying on it).
+- **Local Gemma Server**: `gemma_server.py` (OpenAI-compatible, `/health`, 127.0.0.1:8765), driven by `gemma_bridge.py` and the `local-gemma-bridge` skill.
 - **Python Environment**: Python 3.11 provisioned via `uv` located at `.venv/bin/python`.
 
 ## Critical System Guidelines & Hard-Won Learnings

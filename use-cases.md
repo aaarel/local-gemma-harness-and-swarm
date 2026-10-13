@@ -3,7 +3,7 @@
 
 This document defines concrete, production-grade infrastructure engineering use cases designed for a **Hybrid AI Swarm**:
 * **Cloud Gemini (Planner & Architect)**: High-level architectural reasoning, Google Cloud best practices, CIS benchmark compliance, security blueprinting, and structured execution plans.
-* **On-Device Gemma 4 26B (Worker & Coder)**: 100% offline local implementation on Apple Silicon Metal via LiteRT and Google Antigravity tools (`write_to_file`, `replace_file_content`, `run_command`, `view_file`).
+* **On-Device Gemma 4 26B (Worker & Coder)**: On-device implementation on Apple Silicon Metal via LiteRT and Google Antigravity file tools (`create_file`, `edit_file`, `view_file`).
 * **Future On-Device 3B Model (Linter & Validator)**: Fast local syntax verification, schema validation, and parameter sanity checking.
 
 ---
@@ -31,7 +31,7 @@ This document defines concrete, production-grade infrastructure engineering use 
 │ • Model: Gemma 4 26B A4B on Apple Silicon Metal via LiteRT             │
 │ • Local Agent: Reads local workspace files, writes HCL code,           │
 │   refactors modules, applies targeted diffs                            │
-│ • Runs Local Tools: write_to_file, replace_file_content, run_command   │
+│ • Runs Local Tools: create_file, edit_file, view_file                  │
 │ • Zero Cloud Cost: Generates hundreds of lines of code locally         │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ Generated Code & Diffs
@@ -173,6 +173,6 @@ We are executing **Option A: Cloud Foundation Fabric FAST Landing Zone & Operati
    - Independent audit of all files against CIS GCP Benchmark v3.0 Level 1.
    - Emits an Audit Findings Report with `[PASS]` or `[REVISION NEEDED]`.
 5. **Stage 4 (Remediation Iteration Loop)**:
-   - Worker applies any requested fixes using `replace_file_content` / `write_to_file`.
+   - Worker applies any requested fixes using `edit_file` / `create_file`.
 6. **Stage 5 (Automated CLI Verification)**:
    - Runs `terraform validate` across all generated stages and outputs summary.

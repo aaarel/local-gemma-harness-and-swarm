@@ -5,7 +5,7 @@ description: "Run, monitor, benchmark, and extend the local Gemma 4 26B agent ha
 
 # Local Gemma 4 Agent Harness & Multi-Agent Swarm Runbook
 
-This skill encapsulates the exact architecture, scripts, operational workflows, and hard-won engineering patterns for running Google Antigravity agents 100% offline using Google AI Edge LiteRT and Gemma 4 26B on Apple Silicon (M2/M3/M4).
+This skill encapsulates the exact architecture, scripts, operational workflows, and hard-won engineering patterns for running Google Antigravity agents with on-device inference using Google AI Edge LiteRT and Gemma 4 26B on Apple Silicon (M2/M3/M4).
 
 ## Architecture Overview
 
@@ -30,6 +30,8 @@ This skill encapsulates the exact architecture, scripts, operational workflows, 
 | **Option B Subfolder** | [`Option B: Kubernetes & GKE Production Hardening & Kustomize Migration/`](<../../../Option B: Kubernetes & GKE Production Hardening & Kustomize Migration>) | Dedicated subfolder containing GKE production hardening, Kustomize overlay generation, and security auditing (`run_gke_swarm.py`, `README.md`, `input_workload/`). |
 | **Fabric FAST Runner** | [`run_fast_swarm.py`](../../../run_fast_swarm.py) | Root launcher forwarding to Option A subfolder for Fabric FAST landing zone generation and CIS audit. |
 | **GKE Swarm Runner** | [`run_gke_swarm.py`](../../../run_gke_swarm.py) | Root launcher forwarding to Option B subfolder for GKE hardening and Kustomize generation. |
+| **Local Gemma Server** | [`gemma_server.py`](../../../gemma_server.py), [`gemma_bridge.py`](../../../gemma_bridge.py) | OpenAI-compatible local server with `/health`; see the `local-gemma-bridge` skill. |
+| **FAST v59 Slice** | [`fast_slice.py`](../../../fast_slice.py), [`fast_validate.py`](../../../fast_validate.py) | Gemma writes a FAST v59 firewall-rules file; a schema + policy validator gates it. |
 | **GCP Use Cases** | [`use-cases.md`](../../../use-cases.md) | Documented production-grade GCP infrastructure engineering use cases and architecture patterns. |
 | **Diagnostic Test** | [`smoke.py`](../../../smoke.py) | Quick smoke test verifying LiteRT Metal GPU initialization, shader compilation, and basic tool inference. |
 | **Session Inspector** | [`view_history.py`](../../../view_history.py) | CLI utility to list sessions, view formatted Markdown transcripts, and prune past sessions. |
